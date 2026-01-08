@@ -544,73 +544,7 @@ class MusicDashboard(discord.ui.View):
             q.last_queue_msg = await interaction.original_response()
 
 
-    @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.primary)
-    async def sk(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=False)
-        q = get_queue(self.guild_id)
-        vc = interaction.guild.voice_client
-        
-        if not vc or not (vc.is_playing() or vc.is_paused()):
-            return await interaction.followup.send("❌ **Informasi:** Tidak ada lagu untuk di-skip.", ephemeral=True)
-
-        current_title = "Tidak diketahui"
-        if q.last_dashboard and q.last_dashboard.embeds:
-            try:
-                full_desc = q.last_dashboard.embeds[0].description
-                if "[" in full_desc and "]" in full_desc:
-                    current_title = full_desc.split('[')[1].split(']')[0]
-            except: pass
-
-        next_info = "Antrean habis, bot akan standby. ✨"
-        if q.queue: next_info = f"⏭️ **Selanjutnya:** {q.queue[0]['title']}"
-
-        embed = discord.Embed(
-            title="⏭️ MUSIC SKIP SYSTEM",
-            description=(
-                f"✨ **{interaction.user.mention}** telah melewati lagu!\n\n"
-                f"🗑️ **Dilewati:** {current_title}\n"
-                f"📥 **Status Antrean:** {next_info}\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            ),
-            color=0xe74c3c
-        )
-        embed.set_footer(text="Gunakan /play untuk menambah lagu", icon_url=interaction.user.display_avatar.url)
-
-        vc.stop()
-        await interaction.followup.send(embed=embed)
-        await asyncio.sleep(15)
-        try:
-            msg = await interaction.original_response()
-            await msg.delete()
-        except: pass
-
-    @discord.ui.button(label="Stop", emoji="⏹️", style=discord.ButtonStyle.danger)
-    async def st(self, interaction: discord.Interaction, button: discord.ui.Button):
-        q = get_queue(interaction.guild_id)
-        vc = interaction.guild.voice_client
-        jumlah_antrean = len(q.queue)
-        
-        q.queue.clear()
-        if vc:
-            await vc.disconnect()
-            
-        embed = discord.Embed(
-            title="🛑 SYSTEM TERMINATED",
-            description=(
-                f"✨ **{interaction.user.mention}** telah mematikan pemutar musik.\n\n"
-                f"🧹 **Pembersihan:** `{jumlah_antrean}` lagu telah dihapus dari antrean.\n"
-                f"📡 **Status:** Bot telah keluar dari Voice Channel.\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            ),
-            color=0x2f3136
-        )
-        embed.set_thumbnail(url="https://i.ibb.co.com/KppFQ6N6/Logo1.gif")
-        
-        await interaction.response.send_message(embed=embed, delete_after=20)
-
-
-
-
+    
 
 
 
