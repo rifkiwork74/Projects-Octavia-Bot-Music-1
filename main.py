@@ -73,20 +73,17 @@ YTDL_OPTIONS = {
     'logtostderr': False,
     'quiet': True,
     'no_warnings': True,
+    'default_search': 'auto',
     'source_address': '0.0.0.0',
     'cookiefile': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
     'cachedir': False,
-    # --- TRIK PENYAMARAN ANDROID ---
-    'postprocessor_args': ['-threads', '1'],
-    'extract_flat': False,
-    'http_chunk_size': 1048576,
-    'params': {'n_exploit': True},
+    # Penyamaran agar tidak 403 Forbidden
+    'headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    }
 }
 
-
-
 # --- 5. SETTINGS - FORMAT AUDIO PLAYER (FFMPEG) - OPTIMIZED ---
-#
 FFMPEG_OPTIONS = {
     'before_options': (
         '-reconnect 1 '
@@ -96,14 +93,11 @@ FFMPEG_OPTIONS = {
     ),
     'options': (
         '-vn '
-        # Filter compand untuk suara jernih (Anti-Mendelep)
         '-af "volume=1.0, compand=0.3|0.3:6:-90/-60|-60/-40|-40/-20|-20/0:6:0:-90:0.2, aresample=48000" '
         '-ac 2 '
-        '-b:a 192k '
-        '-f s16le' # Wajib ada agar VolumeTransformer tidak error
+        '-b:a 192k'
     )
 }
-
 
 
 
@@ -650,114 +644,71 @@ async def next_logic(interaction):
         await interaction.channel.send(embed=emb_finish, delete_after=15)
 
 
-# - Start - Logic	:
-#
+
+# --- 14. CORE LOGIC ---
+async def next_logic(interaction):
+    q = get_queue(interaction.guild_id)
+    if q.queue:
+        next_song = q.queue.popleft()
+        await start_stream(interaction, next_song['url'])
+    else:
+        if q.last_dashboard:
+            try: await q.last_dashboard.delete()
+            except: pass
+            q.last_dashboard = None
+        await interaction.channel.send("✨ Antrean Selesai.", delete_after=15)
+
 async def start_stream(interaction, url):
     q = get_queue(interaction.guild_id)
-    q.text_channel_id = interaction.channel.id
-    
     vc = interaction.guild.voice_client
     if not vc: return
     
     try:
-        if vc.is_playing() or vc.is_paused():
-            vc.stop()
+        # PERBAIKAN: Gunakan looping untuk memastikan link audio didapat (Bypass 403)
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
         
-        await asyncio.sleep(0.5)
-
-        # Proses ambil data video tanpa download
-        data = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: ytdl.extract_info(url, download=False)
-        )
+        if 'entries' in data: data = data['entries'][0]
         
-        if 'entries' in data:
-            data = data['entries'][0]
-
-        # Inisialisasi Audio Source (PCMAudio agar support VolumeTransformer)
-        audio_source = discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTIONS)
-        source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
+        # PERBAIKAN FINAL: Gunakan PCMAudio dengan format eksplisit
+        audio_url = data['url']
+        source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(audio_url, **FFMPEG_OPTIONS), volume=q.volume)
         
         def after_playing(error):
-            if error: print(f"Player error: {error}")
+            if error: print(f"Error: {error}")
             asyncio.run_coroutine_threadsafe(next_logic(interaction), bot.loop)
             
         vc.play(source, after=after_playing)
         
-        # Hapus dashboard lama jika ada
         if q.last_dashboard:
             try: await q.last_dashboard.delete()
             except: pass
             
-        # Kirim Dashboard Baru
-        emb = discord.Embed(
-            title="🎶 Sedang Diputar", 
-            description=f"**[{data['title']}]({data.get('webpage_url', url)})**", 
-            color=0x2ecc71 
-        )
-        
-        duration = str(datetime.timedelta(seconds=data.get('duration', 0)))
-        emb.add_field(name="⏱️ Durasi", value=f"`{duration}`", inline=True)
+        emb = discord.Embed(title="🎶 Sedang Diputar", description=f"**[{data['title']}]({data.get('webpage_url', url)})**", color=0x2ecc71)
+        emb.add_field(name="⏱️ Durasi", value=f"`{str(datetime.timedelta(seconds=data.get('duration', 0)))}`", inline=True)
         emb.add_field(name="🔊 Volume", value=f"`{int(q.volume * 100)}%`", inline=True)
-        
         emb.set_thumbnail(url=data.get('thumbnail'))
-        emb.set_footer(
-            text=f"Request oleh: {interaction.user.display_name} • Angelss Project v17", 
-            icon_url=interaction.user.display_avatar.url
-        )
+        emb.set_footer(text=f"Request oleh: {interaction.user.display_name} • Angelss Project", icon_url=interaction.user.display_avatar.url)
         
-        # Tampilkan dashboard dengan view MusicDashboard
         q.last_dashboard = await interaction.channel.send(embed=emb, view=MusicDashboard(interaction.guild_id))
         
     except Exception as e:
-        print(f"CRITICAL ERROR start_stream: {e}")
-        emb_error = discord.Embed(
-            title="⚠️ Gagal Memutar Lagu",
-            description="Terjadi kesalahan pada link audio atau cookies. Melewati ke antrean berikutnya...",
-            color=0xe74c3c
-        )
-        await interaction.channel.send(embed=emb_error, delete_after=10)
-        asyncio.run_coroutine_threadsafe(next_logic(interaction), bot.loop)
+        print(f"Error start_stream: {e}")
+        await interaction.channel.send("⚠️ Gagal memutar lagu. Melewati...", delete_after=10)
+        await next_logic(interaction)
 
-
- 
-# - Play - Logic	:
-#
 async def play_music(interaction, url):
-    """Fungsi kontrol untuk play langsung atau masuk queue"""
     q = get_queue(interaction.guild_id)
-    # Update memory channel setiap kali /play digunakan
-    q.text_channel_id = interaction.channel.id
-    
     if not interaction.guild.voice_client:
-        if interaction.user.voice:
-            await interaction.user.voice.channel.connect()
-        else:
-            return await interaction.channel.send("❌ **Gagal:** Kamu harus masuk ke Voice Channel terlebih dahulu!")
+        if interaction.user.voice: await interaction.user.voice.channel.connect()
+        else: return await interaction.channel.send("❌ Masuk VC dulu!")
     
     vc = interaction.guild.voice_client
-    
     if vc.is_playing() or vc.is_paused():
         data = await asyncio.get_event_loop().run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
         q.queue.append({'title': data['title'], 'url': url})
-        
-        emb_q = discord.Embed(
-            title="📥 Antrean Ditambahkan",
-            description=f"✨ **[{data['title']}]({url})**\nBerhasil masuk ke dalam daftar putar.",
-            color=0x3498db
-        )
-        emb_q.set_footer(text=f"Posisi Antrean: {len(q.queue)}", icon_url=interaction.user.display_avatar.url)
-        
-        if interaction.response.is_done():
-            await interaction.followup.send(embed=emb_q, ephemeral=True)
-        else:
-            await interaction.response.send_message(embed=emb_q, ephemeral=True, delete_after=20)
+        await interaction.followup.send(f"📥 **{data['title']}** masuk antrean.", ephemeral=True)
     else:
-        msg = "🚀 **Memproses lagu ke player...**"
-        if not interaction.response.is_done():
-            await interaction.response.send_message(msg, ephemeral=True, delete_after=5)
-        else:
-            await interaction.followup.send(msg, ephemeral=True)
-            
         await start_stream(interaction, url)
 
 
