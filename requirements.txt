@@ -1,4 +1,6 @@
-discord.py
+discord.py[voice]
 yt-dlp
-static-ffmpeg
 python-dotenv
+static-ffmpeg
+PyNaCl
+cffi
