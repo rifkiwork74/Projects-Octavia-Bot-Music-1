@@ -64,8 +64,7 @@ if not TOKEN:
  
  
     
-# --- 4. SETTINGS - FORMAT CONVERTER (YTDL) ---
-#
+# --- 4. SETTINGS - FORMAT CONVERTER (YTDL) - EVOLVED ---
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
     'noplaylist': True,
@@ -77,33 +76,31 @@ YTDL_OPTIONS = {
     'source_address': '0.0.0.0',
     'cookiefile': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
     'cachedir': False,
+    # Tambahan Header agar tidak 403 Forbidden
+    'headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Sec-Fetch-Mode': 'navigate',
+    }
 }
 
-
-
-
-
-# --- 5. SETTINGS - FORMAT AUDIO PLAYER (FFMPEG) ---
-#
+# --- 5. SETTINGS - FORMAT AUDIO PLAYER (FFMPEG) - OPTIMIZED ---
 FFMPEG_OPTIONS = {
     'before_options': (
         '-reconnect 1 '
         '-reconnect_streamed 1 '
         '-reconnect_delay_max 5 '
-        '-nostdin '
-        '-probesize 10M '     # Dinaikkan dari 7M agar buffer lebih stabil
-        '-analyzeduration 10M' # Dinaikkan dari 5M
+        '-nostdin'
     ),
     'options': (
-        '-vn '
-        '-af "alimiter=limit=0.95, dynaudnorm=f=150:g=15:m=10.0, treble=g=1, bass=g=3" '
-        '-ac 2 '
-        '-ar 48000 '          # Standard High Quality Audio
-        '-b:a 256k '          # Dinaikkan ke 256k (Octavia sanggup menangani ini dengan lancar)
-        '-vbr on '
-        '-compression_level 5'
-    )
+    '-vn '
+    '-af "volume=1.0, compand=0.3|0.3:6:-90/-60|-60/-40|-40/-20|-20/0:6:0:-90:0.2, aresample=48000" '
+    '-ac 2 '
+    '-b:a 192k'
+	)
 }
+
 
 
 
@@ -654,7 +651,6 @@ async def next_logic(interaction):
 #
 async def start_stream(interaction, url):
     q = get_queue(interaction.guild_id)
-    # Update memory channel agar bot tahu kemana harus mengirim respon
     q.text_channel_id = interaction.channel.id
     
     vc = interaction.guild.voice_client
@@ -673,7 +669,10 @@ async def start_stream(interaction, url):
         if 'entries' in data:
             data = data['entries'][0]
 
-        audio_source = discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTIONS)
+        # --- PERBAIKAN DI SINI ---
+        # Menggunakan FFmpegOpusAudio untuk mengatasi durasi melompat
+        # bitrate=192 disarankan untuk stabilitas di server SG
+        audio_source = await discord.FFmpegOpusAudio.from_probe(data['url'], **FFMPEG_OPTIONS)
         source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
         
         def after_playing(error):
@@ -681,6 +680,7 @@ async def start_stream(interaction, url):
             asyncio.run_coroutine_threadsafe(next_logic(interaction), bot.loop)
             
         vc.play(source, after=after_playing)
+        
         
         if q.last_dashboard:
             try: await q.last_dashboard.delete()
