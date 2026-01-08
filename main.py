@@ -86,6 +86,7 @@ YTDL_OPTIONS = {
 }
 
 # --- 5. SETTINGS - FORMAT AUDIO PLAYER (FFMPEG) - OPTIMIZED ---
+#
 FFMPEG_OPTIONS = {
     'before_options': (
         '-reconnect 1 '
@@ -94,11 +95,13 @@ FFMPEG_OPTIONS = {
         '-nostdin'
     ),
     'options': (
-    '-vn '
-    '-af "volume=1.0, compand=0.3|0.3:6:-90/-60|-60/-40|-40/-20|-20/0:6:0:-90:0.2, aresample=48000" '
-    '-ac 2 '
-    '-b:a 192k'
-	)
+        '-vn '
+        # Filter compand untuk suara jernih (Anti-Mendelep)
+        '-af "volume=1.0, compand=0.3|0.3:6:-90/-60|-60/-40|-40/-20|-20/0:6:0:-90:0.2, aresample=48000" '
+        '-ac 2 '
+        '-b:a 192k '
+        '-f s16le' # Wajib ada agar VolumeTransformer tidak error
+    )
 }
 
 
@@ -662,6 +665,7 @@ async def start_stream(interaction, url):
         
         await asyncio.sleep(0.5)
 
+        # Proses ambil data video tanpa download
         data = await asyncio.get_event_loop().run_in_executor(
             None, lambda: ytdl.extract_info(url, download=False)
         )
@@ -669,10 +673,8 @@ async def start_stream(interaction, url):
         if 'entries' in data:
             data = data['entries'][0]
 
-        # --- PERBAIKAN DI SINI ---
-        # Menggunakan FFmpegOpusAudio untuk mengatasi durasi melompat
-        # bitrate=192 disarankan untuk stabilitas di server SG
-        audio_source = await discord.FFmpegOpusAudio.from_probe(data['url'], **FFMPEG_OPTIONS)
+        # Inisialisasi Audio Source (PCMAudio agar support VolumeTransformer)
+        audio_source = discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTIONS)
         source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
         
         def after_playing(error):
@@ -681,11 +683,12 @@ async def start_stream(interaction, url):
             
         vc.play(source, after=after_playing)
         
-        
+        # Hapus dashboard lama jika ada
         if q.last_dashboard:
             try: await q.last_dashboard.delete()
             except: pass
             
+        # Kirim Dashboard Baru
         emb = discord.Embed(
             title="🎶 Sedang Diputar", 
             description=f"**[{data['title']}]({data.get('webpage_url', url)})**", 
@@ -702,17 +705,19 @@ async def start_stream(interaction, url):
             icon_url=interaction.user.display_avatar.url
         )
         
+        # Tampilkan dashboard dengan view MusicDashboard
         q.last_dashboard = await interaction.channel.send(embed=emb, view=MusicDashboard(interaction.guild_id))
         
     except Exception as e:
         print(f"CRITICAL ERROR start_stream: {e}")
         emb_error = discord.Embed(
             title="⚠️ Gagal Memutar Lagu",
-            description="Terjadi kesalahan pada link audio ini. Melewati ke antrean berikutnya...",
+            description="Terjadi kesalahan pada link audio atau cookies. Melewati ke antrean berikutnya...",
             color=0xe74c3c
         )
         await interaction.channel.send(embed=emb_error, delete_after=10)
         asyncio.run_coroutine_threadsafe(next_logic(interaction), bot.loop)
+
 
  
 # - Play - Logic	:
