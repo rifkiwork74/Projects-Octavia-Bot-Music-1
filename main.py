@@ -80,6 +80,7 @@ YTDL_OPTIONS = {
     'postprocessor_args': ['-threads', '1'],
     'extract_flat': False,
     'http_chunk_size': 1048576,
+    'params': {'n_exploit': True},
 }
 
 
