@@ -621,31 +621,7 @@ class MusicDashboard(discord.ui.View):
 #
 # ---  ---
 
-# - Next - Logic	:
-#
-async def next_logic(interaction):
-    """Logika pintar untuk memutar lagu berikutnya atau membersihkan antrean"""
-    q = get_queue(interaction.guild_id)
-    
-    if q.queue:
-        next_song = q.queue.popleft()
-        await start_stream(interaction, next_song['url'])
-    else:
-        if q.last_dashboard:
-            try: await q.last_dashboard.delete()
-            except: pass
-            q.last_dashboard = None
-        
-        emb_finish = discord.Embed(
-            title="✨ Antrean Selesai",
-            description="Semua lagu telah diputar. Bot standby menunggu perintah baru. 💤",
-            color=0x34495e
-        )
-        await interaction.channel.send(embed=emb_finish, delete_after=15)
 
-
-
-# --- 14. CORE LOGIC ---
 async def next_logic(interaction):
     q = get_queue(interaction.guild_id)
     if q.queue:
