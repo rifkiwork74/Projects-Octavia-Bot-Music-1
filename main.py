@@ -1,5 +1,5 @@
 # =================================================================
-# 💿 ANGELSS MUSIC PROJECT - PREMIUM EDITION [OCTAVIA HOSTING]
+# 💿 ANGELSS MUSIC PROJECT - PREMIUM EDITION [OCTAVIA HOSTING FIX]
 # =================================================================
 # Developer : ikiii
 # Status    : Active - IT - Engineering
@@ -13,45 +13,39 @@ import shutil
 import sys
 from collections import deque
 
-import discord
-from discord import app_commands
-from discord.ext import commands
-import yt_dlp
-import static_ffmpeg
-from dotenv import load_dotenv
-
-
-
-
-
-
+try:
+    import discord
+    from discord import app_commands
+    from discord.ext import commands
+    import yt_dlp
+    import static_ffmpeg
+    from dotenv import load_dotenv
+    # Cek Critical Library untuk Suara
+    import nacl 
+except ImportError as e:
+    print(f"❌ CRITICAL ERROR: Library {e.name} belum terinstall.")
+    print("Pastikan 'PyNaCl' dan 'discord.py[voice]' ada di requirements.txt")
 
 # --- 2. INITIALIZATION & FFMPEG CHECK ---
 load_dotenv()
 
+# --- [PERBAIKAN] Logika Jaga-Jaga FFmpeg (Sangat Penting di Hosting Generic)
+# Kita jalankan add_paths() DULUAN sebelum mengecek shutil.which
+try:
+    print("⚙️ Sedang memuat binary audio system...")
+    static_ffmpeg.add_paths() 
+except Exception as e:
+    print(f"❌ Gagal memuat static-ffmpeg: {e}")
 
-
-
-
-# ---  Logika Jaga-Jaga FFmpeg (Sangat Penting di Hosting Generic)
-#
 if shutil.which("ffmpeg") is None:
-    print("⚠️ FFmpeg tidak ditemukan di sistem, mengaktifkan static-ffmpeg...")
-    try:
-        static_ffmpeg.add_paths()
-    except Exception as e:
-        print(f"❌ Gagal memuat static-ffmpeg: {e}")
+    print("⚠️ PERINGATAN: System FFmpeg tidak terdeteksi, mencoba jalur fallback...")
 else:
-    print("✅ FFmpeg terdeteksi di sistem.")
-
-
+    print("✅ FFmpeg Sukses terdeteksi di sistem hosting.")
 
 
 # --- 3. GLOBAL CONFIGURATION ---
 TOKEN = os.getenv('DISCORD_TOKEN')
 COOKIES_FILE = 'youtube_cookies.txt'
-
-
 
 # Validasi Token agar tidak crash
 if not TOKEN:
@@ -59,11 +53,6 @@ if not TOKEN:
     sys.exit(1)
     
  
- 
- 
- 
- 
-    
 # --- 4. SETTINGS - FORMAT CONVERTER (YTDL) - EVOLVED ---
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
@@ -100,22 +89,11 @@ FFMPEG_OPTIONS = {
 }
 
 
-
-
 # INISIALISASI YT-DLP
 ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
 
 
-
-
-
-
-
-
-
-
 # --- 6. SETUP - BOT ---
-#
 class ModernBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -130,17 +108,7 @@ class ModernBot(commands.Bot):
 bot = ModernBot()
 
 
-
-
-
-
-
-
-
-
-
 # --- 7. NOTIFIKASI - BOT - ONLINE UPDATE--
-#
 @bot.event
 async def on_ready():
     target_channel_id = 1456250414638043169 
@@ -189,15 +157,7 @@ async def on_ready():
     print(f"✅ Logged in as {bot.user} - Notifikasi Premium Terkirim!")
 
 
-
-
-
-
-
-
-
 # --- 8.  QUEUE SYSTEM (DENGAN MEMORY CHANNEL) ---
-#
 queues = {}
 
 class MusicQueue:
@@ -208,7 +168,7 @@ class MusicQueue:
         self.volume = 0.5
         self.last_dashboard = None
         self.last_search_msg = None
-        self.last_queue_msg = None  # Tambahkan ini untuk tracking pesan /queue
+        self.last_queue_msg = None
         self.text_channel_id = None
 
 
@@ -218,15 +178,7 @@ def get_queue(guild_id):
     return queues[guild_id]
 
 
-
-
-
-
-
-
-
 # --- 9. AUTO-DISCONNECT (FIX TARGET CHANNEL) ---
-#
 @bot.event
 async def on_voice_state_update(member, before, after):
     # Logika: Jika ada user keluar dan bot sendirian di VC
@@ -237,14 +189,11 @@ async def on_voice_state_update(member, before, after):
             q = get_queue(member.guild.id)
             msg_chan = None
 
-            # PRIORITAS CHANNEL (Mencegah Pesan Nyasar):
-            # 1. Gunakan channel dashboard terakhir
+            # PRIORITAS CHANNEL
             if q.last_dashboard:
                 msg_chan = q.last_dashboard.channel
-            # 2. Jika dashboard tidak ada, gunakan channel tempat /play terakhir
             elif q.text_channel_id:
                 msg_chan = bot.get_channel(q.text_channel_id)
-            # 3. Cadangan terakhir: Cari channel teks di kategori yang sama
             elif before.channel.category:
                 for channel in before.channel.category.text_channels:
                     if channel.permissions_for(member.guild.me).send_messages:
@@ -277,17 +226,7 @@ async def on_voice_state_update(member, before, after):
                         await msg_chan.send("👋 **Informasi:** Bot telah keluar karena tidak ada aktivitas di Voice Channel.", delete_after=10)
 
 
-
-
-
-
-
-
-
-
-
-# --- 	10. SYSTEM SEARCH ENGINE PILIHAN	---
-#
+# --- 10. SYSTEM SEARCH ENGINE PILIHAN ---
 class SearchControlView(discord.ui.View):
     def __init__(self, entries, user):
         super().__init__(timeout=None) 
@@ -311,7 +250,6 @@ class SearchControlView(discord.ui.View):
         select = discord.ui.Select(placeholder="🎯 Pilih lagu untuk ditambahkan...", options=options)
         
         async def callback(interaction: discord.Interaction):
-            # Permission: Hanya pencari yang bisa milih
             if interaction.user != self.user:
                 return await interaction.response.send_message(
                     f"⚠️ **Ups!** Hanya {self.user.mention} yang bisa memilih lagu dari hasil ini.", 
@@ -321,7 +259,6 @@ class SearchControlView(discord.ui.View):
             await interaction.response.defer()
             await play_music(interaction, select.values[0])
             
-            # Status sementara
             status_embed = discord.Embed(
                 title="✅ Berhasil Ditambahkan!",
                 description="Lagu sedang diproses ke antrean...",
@@ -334,7 +271,6 @@ class SearchControlView(discord.ui.View):
         select.callback = callback
         self.add_item(select)
 
-        # Tombol Tutup
         btn_close = discord.ui.Button(label="Tutup Menu", style=discord.ButtonStyle.danger, emoji="🗑️")
         async def close_callback(interaction: discord.Interaction):
             if interaction.user == self.user:
@@ -354,18 +290,7 @@ class SearchControlView(discord.ui.View):
         return embed
 
 
-
-
-
-
-
-
-
-
-
-# --- 	11. UI CLASS:	 DASHBOARD & VOLUME	---
-#
-# ---  ---
+# --- 11. UI CLASS: DASHBOARD & VOLUME ---
 class VolumeControlView(discord.ui.View):
     def __init__(self, guild_id):
         super().__init__(timeout=60)
@@ -375,7 +300,6 @@ class VolumeControlView(discord.ui.View):
         q = get_queue(self.guild_id)
         vol_percent = int(q.volume * 100)
         embed = discord.Embed(title="🎚️ Pengaturan Audio", color=0x3498db)
-        # Bar volume (1 kotak = 10%, total 10 kotak untuk 100%)
         bar_length = 10
         filled = int(vol_percent / 10)
         bar = "▰" * filled + "▱" * (bar_length - filled)
@@ -387,7 +311,6 @@ class VolumeControlView(discord.ui.View):
     async def down(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer() 
         q = get_queue(self.guild_id)
-        # Kurangi 0.1 (10%), minimal tetap 0.0 (0%)
         q.volume = max(0.0, q.volume - 0.1)
         if interaction.guild.voice_client and interaction.guild.voice_client.source:
             interaction.guild.voice_client.source.volume = q.volume
@@ -397,26 +320,14 @@ class VolumeControlView(discord.ui.View):
     async def up(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer() 
         q = get_queue(self.guild_id)
-        # Tambah 0.1 (10%), maksimal tetap 1.0 (100%) sesuai standar internasional
         q.volume = min(1.0, q.volume + 0.1) 
         if interaction.guild.voice_client and interaction.guild.voice_client.source:
             interaction.guild.voice_client.source.volume = q.volume
         await interaction.edit_original_response(embed=self.create_embed())
 
 
-
-
-
-
-
-
-
-
-# --- 	12. FUNCTION:	 EMBED - SKIP	---
-#
-# ---  ---
+# --- 12. FUNCTION: EMBED - SKIP ---
 def buat_embed_skip(user, lagu_dilewati, info_selanjutnya):
-    """Fungsi pembantu agar tampilan skip/lompat selalu cantik & seragam ✨"""
     embed = discord.Embed(
         title="⏭️ NEXT MUSIC SKIP",
         description=(
@@ -425,24 +336,13 @@ def buat_embed_skip(user, lagu_dilewati, info_selanjutnya):
             f"📥 **Status Antrean:** {info_selanjutnya}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
         ),
-        color=0xe67e22 # Warna Orange Sunset yang elegan
+        color=0xe67e22 
     )
-    # Menambahkan icon user yang melakukan skip di footer
     embed.set_footer(text="System Skip Otomatis • Angelss Project v17", icon_url=user.display_avatar.url)
     return embed
 
 
-
-
-
-
-
-
-
-
-# --- 	13. UI CLASS:	 DASHBOARD & AUDIO - PLAYER	---
-#
-# ---  ---
+# --- 13. UI CLASS: DASHBOARD & AUDIO - PLAYER ---
 class MusicDashboard(discord.ui.View):
     def __init__(self, guild_id):
         super().__init__(timeout=None)
@@ -471,13 +371,11 @@ class MusicDashboard(discord.ui.View):
     
     @discord.ui.button(label="Antrean", emoji="📜", style=discord.ButtonStyle.gray)
     async def list_q_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Ini khusus untuk klik tombol di dashboard
         await self.tampilkan_antrean(interaction)
 
     async def tampilkan_antrean(self, interaction: discord.Interaction):
         q = get_queue(self.guild_id)
         
-        # 1. Refresh System: Hapus pesan antrean lama
         if q.last_queue_msg:
             try: await q.last_queue_msg.delete()
             except: pass
@@ -504,7 +402,6 @@ class MusicDashboard(discord.ui.View):
         select = discord.ui.Select(placeholder="🚀 Pilih lagu untuk dilompati...", options=options)
 
         async def select_callback(inter: discord.Interaction):
-            # Beri centang pada pilihan
             for option in select.options:
                 if option.value == select.values[0]:
                     option.emoji = "✅"
@@ -536,7 +433,6 @@ class MusicDashboard(discord.ui.View):
         view_select = discord.ui.View(timeout=60)
         view_select.add_item(select)
         
-        # Kirim pesan baru
         if interaction.response.is_done():
             q.last_queue_msg = await interaction.followup.send(embed=emb, view=view_select)
         else:
@@ -544,18 +440,7 @@ class MusicDashboard(discord.ui.View):
             q.last_queue_msg = await interaction.original_response()
 
 
-    
-
-
-
-
-
-
-# --- 	14. CORE LOGIC:	 SYSTEM - DURASI AUTO 00:00	---
-#
-# ---  ---
-
-
+# --- 14. CORE LOGIC: SYSTEM - AUDIO ENGINE ---
 async def next_logic(interaction):
     q = get_queue(interaction.guild_id)
     if q.queue:
@@ -568,24 +453,28 @@ async def next_logic(interaction):
             q.last_dashboard = None
         await interaction.channel.send("✨ Antrean Selesai.", delete_after=15)
 
+# --- [BAGIAN PENTING - START STREAM DIPERBAIKI] ---
 async def start_stream(interaction, url):
     q = get_queue(interaction.guild_id)
     vc = interaction.guild.voice_client
     if not vc: return
     
     try:
-        # PERBAIKAN: Gunakan looping untuk memastikan link audio didapat (Bypass 403)
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
         
         if 'entries' in data: data = data['entries'][0]
         
-        # PERBAIKAN FINAL: Gunakan PCMAudio dengan format eksplisit
+        # PERBAIKAN: Menambahkan 'executable="ffmpeg"'
+        # Ini memaksa library membaca binary yang sudah disiapkan static-ffmpeg
         audio_url = data['url']
-        source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(audio_url, **FFMPEG_OPTIONS), volume=q.volume)
+        source = discord.PCMVolumeTransformer(
+            discord.FFmpegPCMAudio(audio_url, executable="ffmpeg", **FFMPEG_OPTIONS), 
+            volume=q.volume
+        )
         
         def after_playing(error):
-            if error: print(f"Error: {error}")
+            if error: print(f"Error After Playing: {error}")
             asyncio.run_coroutine_threadsafe(next_logic(interaction), bot.loop)
             
         vc.play(source, after=after_playing)
@@ -603,8 +492,8 @@ async def start_stream(interaction, url):
         q.last_dashboard = await interaction.channel.send(embed=emb, view=MusicDashboard(interaction.guild_id))
         
     except Exception as e:
-        print(f"Error start_stream: {e}")
-        await interaction.channel.send("⚠️ Gagal memutar lagu. Melewati...", delete_after=10)
+        print(f"❌ Error start_stream: {e}")
+        await interaction.channel.send(f"⚠️ Gagal memutar lagu: {e}", delete_after=10)
         await next_logic(interaction)
 
 async def play_music(interaction, url):
@@ -622,23 +511,14 @@ async def play_music(interaction, url):
         await start_stream(interaction, url)
 
 
+# --- 15. TREE COMMAND: [ SYSTEM / COMMAND ] ---
 
-
-
-
-# --- 	15. TREE COMMAND:	 [ SYSTEM / COMMAND ]	---
-#
-# ---  ---
-
-
-#	----	Command - /PLAY
-#
+# Command - /PLAY
 @bot.tree.command(name="play", description="Putar musik")
 async def play(interaction: discord.Interaction, cari: str):
-    await interaction.response.defer() # Biar tidak interaction failed
+    await interaction.response.defer() 
     q = get_queue(interaction.guild_id)
 
-    # --- FITUR AUTO-CLEAN SEARCH LAMA ---
     if hasattr(q, 'last_search_msg') and q.last_search_msg:
         try: await q.last_search_msg.delete()
         except: pass
@@ -653,27 +533,21 @@ async def play(interaction: discord.Interaction, cari: str):
         )
         
         view = SearchControlView(data['entries'], interaction.user)
-        # Simpan pesan pencarian ke dalam queue agar bisa dihapus nanti
         q.last_search_msg = await interaction.followup.send(embed=view.create_embed(), view=view)
 
 
-
-#	----	Command - /STOP
-#
+# Command - /STOP
 @bot.tree.command(name="stop", description="Mematikan musik dan mengeluarkan bot dari voice channel")
 async def stop_cmd(interaction: discord.Interaction):
     q = get_queue(interaction.guild_id)
     vc = interaction.guild.voice_client
     
-    # Ambil data jumlah antrean sebelum dihapus
     jumlah_antrean = len(q.queue)
     
     if vc:
-        # Logika pembersihan
         q.queue.clear()
         await vc.disconnect()
         
-        # Buat Embed yang sinkron dengan tombol dashboard
         embed = discord.Embed(
             title="🛑 COMMAND STOP EXECUTED",
             description=(
@@ -682,36 +556,28 @@ async def stop_cmd(interaction: discord.Interaction):
                 f"📡 **Status:** Koneksi Voice Channel diputuskan.\n\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
             ),
-            color=0x2f3136 # Warna gelap profesional
+            color=0x2f3136 
         )
         embed.set_thumbnail(url="https://i.ibb.co.com/KppFQ6N6/Logo1.gif")
         embed.set_footer(text="Sesi berakhir via Slash Command", icon_url=bot.user.avatar.url)
 
-        # Kirim ke publik agar semua tahu siapa yang mematikan musik
         await interaction.response.send_message(embed=embed, delete_after=20)
     else:
-        # Jika bot tidak ada di voice channel
         await interaction.response.send_message("❌ **Gagal:** Bot tidak sedang berada di Voice Channel.", ephemeral=True)
 
 
-
-#	----	Command - /VOLUME
-#
+# Command - /VOLUME
 @bot.tree.command(name="volume", description="Atur Volume (0-100%)")
 @app_commands.describe(persen="Masukkan angka antara 0 sampai 100")
 async def volume(interaction: discord.Interaction, persen: int):
     q = get_queue(interaction.guild_id)
     
-    # 1. Batasi input agar sesuai standar internasional (Max 100)
     if 0 <= persen <= 100:
-        # Ubah ke angka desimal (misal 50 jadi 0.5)
         q.volume = persen / 100
         
-        # 2. Terapkan langsung ke audio yang sedang berjalan
         if interaction.guild.voice_client and interaction.guild.voice_client.source:
             interaction.guild.voice_client.source.volume = q.volume
             
-        # 3. Buat visual bar agar keren seperti di dashboard
         bar_length = 10
         filled = int(persen / 10)
         bar = "▰" * filled + "▱" * (bar_length - filled)
@@ -723,45 +589,35 @@ async def volume(interaction: discord.Interaction, persen: int):
         )
         await interaction.response.send_message(embed=embed, delete_after=15)
     else:
-        # Pesan jika user input di luar 0-100
         await interaction.response.send_message(
             "❌ **Gagal:** Gunakan angka antara **0 sampai 100** saja untuk menjaga kualitas audio tetap jernih.", 
             ephemeral=True
         )
 
 
-
-
-#	----	Command - /PAUSE
-#
+# Command - /PAUSE
 @bot.tree.command(name="pause", description="Jeda musik")
 async def pause(interaction: discord.Interaction):
     if interaction.guild.voice_client and interaction.guild.voice_client.is_playing(): interaction.guild.voice_client.pause(); await interaction.response.send_message("⏸️ Musik dijeda.")
     else: await interaction.response.send_message("❌ Tidak ada lagu yang diputar.", ephemeral=True)
 
 
-
-#	----	Command - /RESUME
-#
+# Command - /RESUME
 @bot.tree.command(name="resume", description="Lanjut musik")
 async def resume(interaction: discord.Interaction):
     if interaction.guild.voice_client and interaction.guild.voice_client.is_paused(): interaction.guild.voice_client.resume(); await interaction.response.send_message("▶️ Musik dilanjutkan.")
     else: await interaction.response.send_message("❌ Tidak ada lagu yang dijeda.", ephemeral=True)
 
 
-
-#	----	Command - /SKIP
-#
+# Command - /SKIP
 @bot.tree.command(name="skip", description="Lewati lagu yang sedang berjalan")
 async def skip_cmd(interaction: discord.Interaction):
-    # 1. Defer agar tidak "Interaction Failed"
     await interaction.response.defer(ephemeral=False)
     
     q = get_queue(interaction.guild_id)
     vc = interaction.guild.voice_client
     
     if vc and (vc.is_playing() or vc.is_paused()):
-        # 2. Ambil Judul Lagu (Logika yang lebih aman)
         current_title = "Tidak diketahui"
         if q.last_dashboard and q.last_dashboard.embeds:
             try:
@@ -771,12 +627,10 @@ async def skip_cmd(interaction: discord.Interaction):
             except:
                 pass
 
-        # 3. Cek Antrean Berikutnya
         next_info = "Antrean kosong, bot akan standby. ✨"
         if q.queue:
             next_info = f"⏭️ **Selanjutnya:** {q.queue[0]['title']}"
 
-        # 4. Buat Embed yang Elegan
         embed = discord.Embed(
             title="⏭️ COMMAND SKIP EXECUTED",
             description=(
@@ -785,17 +639,14 @@ async def skip_cmd(interaction: discord.Interaction):
                 f"📥 **Status:** {next_info}\n\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
             ),
-            color=0xe67e22 # Warna orange keren
+            color=0xe67e22 
         )
         embed.set_footer(text="System Skip Otomatis", icon_url=bot.user.avatar.url if bot.user.avatar else None)
 
-        # 5. Eksekusi
         vc.stop()
         
-        # Kirim menggunakan followup karena sudah di-defer
         await interaction.followup.send(embed=embed)
         
-        # Hapus pesan otomatis setelah 15 detik
         await asyncio.sleep(15)
         try:
             msg = await interaction.original_response()
@@ -803,29 +654,19 @@ async def skip_cmd(interaction: discord.Interaction):
         except:
             pass
     else:
-        # Jika tidak ada lagu, kirim pesan error (lewat followup karena sudah defer)
         await interaction.followup.send("❌ **Gagal:** Bot tidak sedang memutar musik.", ephemeral=True)
 
 
-
-
-#	----	Command - /QUEUE
-#
+# Command - /QUEUE
 @bot.tree.command(name="queue", description="Lihat antrean dan pilih lagu")
 async def queue_cmd(interaction: discord.Interaction):
-    # Buat instance dashboard sementara untuk mengakses fungsinya
     view = MusicDashboard(interaction.guild_id)
     await view.tampilkan_antrean(interaction)
 
 
-
-
-
-#	----	Command - /MASUK_VC	---	(VALIDASI + EMBED + AUTO DELETE 60s) ---
-#
+# Command - /MASUK_VC
 @bot.tree.command(name="masuk_vc", description="Panggil bot ke Voice Channel")
 async def masuk(interaction: discord.Interaction):
-    # 1. Cek apakah User ada di Voice Channel
     if not interaction.user.voice:
         emb_error = discord.Embed(
             title="🚫 Akses Ditolak",
@@ -833,13 +674,11 @@ async def masuk(interaction: discord.Interaction):
                 "Kamu **belum masuk** ke Voice Channel!\n"
                 "Mohon masuk ke voice channel terlebih dahulu agar aku bisa bergabung."
             ),
-            color=0xe74c3c # Merah
+            color=0xe74c3c 
         )
         emb_error.set_footer(text="Gagal bergabung")
-        # content=... untuk Tag User, delete_after=60 untuk hapus otomatis
         return await interaction.response.send_message(content=interaction.user.mention, embed=emb_error, delete_after=60)
 
-    # 2. Logika Masuk Voice
     vc = interaction.guild.voice_client
     target_channel = interaction.user.voice.channel
 
@@ -850,25 +689,19 @@ async def masuk(interaction: discord.Interaction):
     else:
         await target_channel.connect()
 
-    # 3. Embed Sukses
     emb_success = discord.Embed(
         title="📥 Berhasil Masuk!",
         description=f"Siap memutar musik di **{target_channel.name}** 🎵\nAyo putar lagu kesukaanmu!",
-        color=0x2ecc71 # Hijau
+        color=0x2ecc71 
     )
-    emb_success.set_thumbnail(url="https://i.ibb.co.com/KppFQ6N6/Logo1.gif") # Opsional: Pakai logo botmu
+    emb_success.set_thumbnail(url="https://i.ibb.co.com/KppFQ6N6/Logo1.gif")
     
     await interaction.response.send_message(content=interaction.user.mention, embed=emb_success, delete_after=60)
 
 
-
-
-
-#	----	Command - /KELAUR_VC
-#
+# Command - /KELUAR_VC
 @bot.tree.command(name="keluar_vc", description="Keluarkan bot dari Voice Channel")
 async def keluar(interaction: discord.Interaction):
-    # 1. Cek apakah User ada di Voice Channel (Sesuai request kamu)
     if not interaction.user.voice:
         emb_error = discord.Embed(
             title="🚫 Akses Ditolak",
@@ -880,38 +713,30 @@ async def keluar(interaction: discord.Interaction):
         )
         return await interaction.response.send_message(content=interaction.user.mention, embed=emb_error, delete_after=60)
 
-    # 2. Logika Keluar
     vc = interaction.guild.voice_client
     if vc:
-        # Bersihkan antrean agar bersih saat masuk lagi nanti
         q = get_queue(interaction.guild_id)
         q.queue.clear()
         
         await vc.disconnect()
         
-        # 3. Embed Sukses Keluar
         emb_bye = discord.Embed(
             title="👋 Sampai Jumpa!",
             description="Aku telah keluar dari Voice Channel.\nTerima kasih sudah mendengarkan musik bersamaku! ✨",
-            color=0xf1c40f # Kuning/Emas
+            color=0xf1c40f 
         )
         emb_bye.set_footer(text="Disconnect success")
         
         await interaction.response.send_message(content=interaction.user.mention, embed=emb_bye, delete_after=60)
     else:
-        # Jika bot memang tidak ada di voice
         await interaction.response.send_message("❌ Aku sedang tidak berada di dalam Voice Channel manapun.", ephemeral=True)
 
 
-
-
-#	----	Command - /HELP
-#
+# Command - /HELP
 @bot.tree.command(name="help", description="Lihat Panduan & Info Developer")
 async def help_cmd(interaction: discord.Interaction):
     dev_id = 590774565115002880
     
-    # --- EMBED PANDUAN ---
     emb_guide = discord.Embed(title="💿 Panduan Sistem Angelss Music", color=0x3498db)
     if bot.user.avatar: emb_guide.set_thumbnail(url=bot.user.avatar.url)
     
@@ -937,7 +762,6 @@ async def help_cmd(interaction: discord.Interaction):
         "┕ ⚡ **Insta Skip** : Lewati lagu tanpa mengetik"
     )
 
-    # --- EMBED DEVELOPER (TEXT SESUAI REQUEST) ---
     emb_dev = discord.Embed(title="👨‍💻 Developer Profile", color=0x9b59b6)
     emb_dev.description = (
         f"**Developer :** ikiii\n"
@@ -948,7 +772,6 @@ async def help_cmd(interaction: discord.Interaction):
         f"Bot ini dibuat oleh seorang yang bernama **ikiii** yang bijaksana, dan yang melakukan segala hal apapun diawali dengan berdo'a 🤲🏻, amiin."
     )
     
-    # Banner & Footer
     emb_dev.set_image(url="https://i.getpantry.cloud/apf/help_banner.gif")
     emb_dev.set_footer(text="Projects Bot • Music Ikiii hehehe ....", icon_url=interaction.user.display_avatar.url)
     
