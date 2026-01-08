@@ -1,0 +1,5 @@
+discord.py[voice]
+PyNaCl
+yt-dlp
+python-dotenv
+static-ffmpeg
