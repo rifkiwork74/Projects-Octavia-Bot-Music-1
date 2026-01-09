@@ -984,13 +984,17 @@ async def start_stream(interaction, url):
         audio_source = discord.FFmpegPCMAudio(stream_url, executable="ffmpeg", **FFMPEG_OPTIONS)
         source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
         
-        # 3. Callback Handlers (Apa yang terjadi saat lagu habis)
+        # 3. Callback Handlers (Audit Fix: Menjamin kelancaran antrean)
         def after_playing(error):
             if error: logger.error(f"⚠️ Player Error: {error}")
-            # Panggil lagu berikutnya secara thread-safe
-            bot.loop.call_soon_threadsafe(
-                lambda: asyncio.ensure_future(next_logic(interaction))
-            )
+            
+            # Gunakan fungsi bantuan agar thread-safe dan stabil
+            future = asyncio.run_coroutine_threadsafe(next_logic(interaction), bot.loop)
+            try:
+                future.result(timeout=1) # Memberi sinyal ke loop untuk segera jalan
+            except:
+                pass 
+
 
         # 4. Eksekusi
         if vc.is_playing(): vc.stop()
@@ -1057,21 +1061,25 @@ async def start_stream(interaction, url):
 # ==============================================================================
 # (PENTING: Fungsi ini ditaruh DI ATAS command /play agar terbaca sistem dulu)
 
+
 async def play_music(interaction, url):
     """Fungsi kontrol untuk memutuskan apakah lagu diputar langsung atau antre."""
     q = get_queue(interaction.guild_id)
     q.text_channel_id = interaction.channel.id
     
-    # Koneksi otomatis ke Voice Channel
+    # 1. Koneksi otomatis ke Voice Channel
     if not interaction.guild.voice_client:
         if interaction.user.voice:
-            await interaction.user.voice.channel.connect()
+            try:
+                await interaction.user.voice.channel.connect()
+            except Exception as e:
+                return await interaction.followup.send(f"❌ Gagal koneksi: {e}", ephemeral=True)
         else:
             return await interaction.followup.send("❌ **Gagal:** Kamu harus masuk ke Voice Channel dulu!", ephemeral=True)
     
     vc = interaction.guild.voice_client
     
-    # Cek apakah bot sedang memutar musik atau dijeda
+    # 2. Cek apakah bot sedang memutar musik atau dijeda
     if vc.is_playing() or vc.is_paused():
         try:
             # Ambil info lagu untuk ditampilkan di pesan antrean
@@ -1080,6 +1088,7 @@ async def play_music(interaction, url):
 
             q.queue.append({'title': data['title'], 'url': url})
             
+            # --- TETAP PAKAI EMBED ASLI KAMU ---
             emb_q = discord.Embed(
                 title="📥 Antrean Ditambahkan",
                 description=f"✨ **[{data['title']}]({url})**",
@@ -1087,12 +1096,18 @@ async def play_music(interaction, url):
             )
             emb_q.set_footer(text=f"Posisi Antrean: {len(q.queue)}", icon_url=interaction.user.display_avatar.url)
             await interaction.followup.send(embed=emb_q, ephemeral=True)
+            
         except Exception as e:
             await interaction.followup.send(f"⚠️ Gagal menambahkan ke antrean: {str(e)[:50]}", ephemeral=True)
     
     else:
-        # Jika bot sedang menganggur, langsung jalankan mesin pemutar
+        # 3. Jika bot sedang menganggur, bersihkan player lama dulu (Anti-Stuck)
+        if vc.is_playing(): 
+            vc.stop()
+            
+        # Langsung jalankan mesin pemutar (Pastikan start_stream sudah pakai FFMPEG_OPTIONS hasil audit)
         await start_stream(interaction, url)
+
 
 
 # ==============================================================================
