@@ -1165,7 +1165,25 @@ async def play_music(interaction, url):
     
     if vc.is_playing() or vc.is_paused():
         # Jika sedang ada lagu, masukkan ke antrean
-        data = await asyncio.get_event_loop().run_in_executor(None, lambda: ytdl.extract_info(url,
+        data = await asyncio.get_event_loop().run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+        
+        if 'entries' in data:
+            data = data['entries'][0]
+
+        q.queue.append({'title': data['title'], 'url': url})
+        
+        emb_q = discord.Embed(
+            title="📥 Antrean Ditambahkan",
+            description=f"✨ **[{data['title']}]({url})**\nBerhasil masuk ke dalam daftar putar.",
+            color=0x3498db
+        )
+        emb_q.set_footer(text=f"Posisi Antrean: {len(q.queue)}", icon_url=interaction.user.display_avatar.url)
+        
+        await interaction.followup.send(embed=emb_q, ephemeral=True)
+    else:
+        # Jika kosong, langsung putar lagu pertama
+        await interaction.edit_original_response(content="🚀 **Memproses lagu ke player...**")
+        await start_stream(interaction, url)
 
 
 
