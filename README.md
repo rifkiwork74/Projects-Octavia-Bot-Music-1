@@ -16,7 +16,7 @@
 ## 🚀 Overview
 **Angelss Music Bot** adalah solusi audio Discord kelas industri yang dirancang untuk performa maksimal pada **Python 3.10**. Menggunakan engine `yt-dlp` yang dikombinasikan dengan `static-ffmpeg` untuk menghasilkan kualitas suara *High-Fidelity* tanpa memerlukan instalasi manual pada environment hosting.
 
-> **📢 Project Update V17:** Sinkronisasi total antara Dashboard UI, Volume Control, dan Session Memory Management untuk pengalaman mendengarkan yang lebih seamless.
+> **📢 Project Update V17:** Sinkronisasi total antara Dashboard UI, Volume Control, dan Session Memory Management untuk pengalaman mendengarkan yang lebih seamless...
 
 ---
 
