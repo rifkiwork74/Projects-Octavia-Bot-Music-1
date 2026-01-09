@@ -1623,6 +1623,7 @@ async def help_cmd(interaction: discord.Interaction):
 
 # --- [ 14. DEBUG SYSTEM: HEALTH CHECK ] ---
 #
+# Ganti bagian awal /debug kamu dengan ini agar import tidak error
 @bot.tree.command(name="debug", description="Cek kesehatan sistem audio dan environment hosting")
 async def debug_system(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -1630,6 +1631,8 @@ async def debug_system(interaction: discord.Interaction):
     import subprocess
     import sys
     import platform
+    import os # Pastikan OS diimport untuk cek folder
+
 
     # 1. Cek FFmpeg
     try:
