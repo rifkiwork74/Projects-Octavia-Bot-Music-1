@@ -32,7 +32,9 @@ Gak cuma sekedar putar musik, bot ini punya "jeroan" yang udah di-tweak habis-ha
 * **🧹 Anti-Sampah**: Bot ini rajin bersih-bersih chat lama biar channel kamu tetep rapi.
 
 
----
+
+
+
 
 
 ## 🛠️ Tech Stack & Requirements
@@ -42,6 +44,8 @@ Gak cuma sekedar putar musik, bot ini punya "jeroan" yang udah di-tweak habis-ha
 
 
 ---
+
+
 
 
 ## 🏗️ Project Architecture
@@ -55,7 +59,9 @@ Gak cuma sekedar putar musik, bot ini punya "jeroan" yang udah di-tweak habis-ha
 ```
 
 
+
 ---
+
 
 
 ## ⚙️ Cara Pemasangan (Buat yang Diizinin)
