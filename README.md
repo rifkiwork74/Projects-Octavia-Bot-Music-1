@@ -1,6 +1,6 @@
 # 💿 Angelss Music Bot • V17 FINAL FIX
 <p align="center">
-  <img src="https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1/blob/main/Angels-Banner-Bot-1.png" width="480x580" alt="Angelss Logo">
+  <img src="https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1/blob/main/Angels-Banner-Bot-1.png" width="360x480" alt="Angelss Logo">
 </p>
 
 <p align="center">
@@ -10,7 +10,9 @@
   <a href="#"><img src="https://img.shields.io/badge/Status-Production--Ready-green?style=for-the-badge" alt="Status"></a>
 </p>
 
+
 ---
+
 
 ## 🚀 Overview
 **Angelss Music Bot** adalah solusi audio Discord kelas industri yang dirancang untuk performa maksimal pada **Python 3.10**. Menggunakan engine `yt-dlp` yang dikombinasikan dengan `static-ffmpeg` untuk menghasilkan kualitas suara *High-Fidelity* tanpa memerlukan instalasi manual pada environment hosting.
@@ -21,7 +23,6 @@
 ---
 
 
-
 ## ✨ Kenapa Bot Ini Keren?
 Gak cuma sekedar putar musik, bot ini punya "jeroan" yang udah di-tweak habis-habisan:
 * **🔊 Crystal Clear Sound**: Bitrate audio sampai **256kbps**. Telinga kamu bakal dimanjakan!
@@ -30,15 +31,17 @@ Gak cuma sekedar putar musik, bot ini punya "jeroan" yang udah di-tweak habis-ha
 * **📜 Interactive Dashboard**: Ada tombol-tombol buat Jeda, Lanjut, Skip, dan atur Volume langsung di chat.
 * **🧹 Anti-Sampah**: Bot ini rajin bersih-bersih chat lama biar channel kamu tetep rapi.
 
+
+---
+
+
 ## 🛠️ Tech Stack & Requirements
 * **Language**: Python 3.10 (Wajib banget ya, biar stabil!)
 * **Library Utama**: `discord.py`, `yt-dlp`, `static-ffmpeg`
 * **Infrastructure**: Octavia Premium Hosting (Jakarta Cluster)
 
 
-
 ---
-
 
 
 ## 🏗️ Project Architecture
@@ -49,6 +52,7 @@ Gak cuma sekedar putar musik, bot ini punya "jeroan" yang udah di-tweak habis-ha
 ├── 📄 .gitignore            # Security filters for Git
 ├── 📄 requirements.txt      # Dependency manifest
 └── 📄 youtube_cookies.txt   # YouTube Auth Session
+```
 
 
 ---
@@ -58,4 +62,4 @@ Gak cuma sekedar putar musik, bot ini punya "jeroan" yang udah di-tweak habis-ha
 1. **Clone Project**:
    ```bash
    git clone [https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1.git](https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1.git)
-   
+   ```
