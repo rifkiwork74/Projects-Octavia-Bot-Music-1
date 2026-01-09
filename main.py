@@ -1105,25 +1105,31 @@ async def play_music(interaction, url):
 #
 
 
-#	----	Command - /PLAY
+#	----	Command - /PLAY (FIXED VERSION FOR 404 ERROR)
 #
 @bot.tree.command(name="play", description="Putar musik")
 async def play(interaction: discord.Interaction, cari: str):
-    # Kirim pesan awal agar user tahu bot sedang bekerja
-    await interaction.response.send_message("🔍 **Memproses pencarian...** Mohon tunggu sebentar.", ephemeral=True)
+    # 1. WAJIB: Defer segera agar token interaksi tidak hangus dalam 3 detik
+    await interaction.response.defer(ephemeral=True)
+    
+    # 2. Gunakan followup karena response sudah didefer
+    await interaction.followup.send("🔍 **Memproses pencarian...** Mohon tunggu sebentar.")
     
     q = get_queue(interaction.guild_id)
 
-    # Logika hapus pesan search lama tetap sama
+    # Logika hapus pesan search lama
     if q.last_search_msg:
-        try: await q.last_search_msg.delete()
-        except: pass
+        try: 
+            await q.last_search_msg.delete()
+        except: 
+            pass
 
     if "http" in cari: 
+        # Jika berupa link, langsung putar
         await play_music(interaction, cari)
-        # Ubah pesan pencarian tadi menjadi sukses
         await interaction.edit_original_response(content="✅ **Link terdeteksi!** Menambahkan ke antrean...")
     else:
+        # Jika berupa teks, lakukan pencarian YouTube
         try:
             search_opts = {'extract_flat': True, 'quiet': True}
             data = await asyncio.get_event_loop().run_in_executor(
@@ -1134,11 +1140,32 @@ async def play(interaction: discord.Interaction, cari: str):
                 return await interaction.edit_original_response(content="❌ **Gagal:** Lagu tidak ditemukan.")
             
             view = SearchControlView(data['entries'], interaction.user)
-            # Mengedit pesan "Memproses" tadi menjadi menu hasil pencarian
+            # Menampilkan menu hasil pencarian
             q.last_search_msg = await interaction.edit_original_response(content=None, embed=view.create_embed(), view=view)
 
         except Exception as e:
+            logger.error(f"Error search: {e}")
             await interaction.edit_original_response(content="⚠️ Terjadi kesalahan saat mencari.")
+
+# --- [ PERBAIKAN play_music ] ---
+async def play_music(interaction, url):
+    """Fungsi kontrol untuk play langsung atau masuk queue"""
+    q = get_queue(interaction.guild_id)
+    q.text_channel_id = interaction.channel.id
+    
+    # Pastikan bot join ke voice channel
+    if not interaction.guild.voice_client:
+        if interaction.user.voice:
+            await interaction.user.voice.channel.connect()
+        else:
+            # Karena sudah defer, gunakan edit_original_response atau followup
+            return await interaction.edit_original_response(content="❌ **Gagal:** Kamu harus masuk ke Voice Channel!")
+    
+    vc = interaction.guild.voice_client
+    
+    if vc.is_playing() or vc.is_paused():
+        # Jika sedang ada lagu, masukkan ke antrean
+        data = await asyncio.get_event_loop().run_in_executor(None, lambda: ytdl.extract_info(url,
 
 
 
