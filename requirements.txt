@@ -1,6 +1,4 @@
-discord.py[voice]==2.3.2
+discord.py[voice]
 yt-dlp
 python-dotenv
 static-ffmpeg
-PyNaCl==1.5.0
-cffi==1.15.1
