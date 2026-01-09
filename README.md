@@ -1,6 +1,6 @@
 # 💿 Angelss Music Bot • V17 FINAL FIX
 <p align="center">
-  <img src="https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1/blob/main/Angels-Banner-Bot-1.png" width="240" alt="Angelss Logo">
+  <img src="https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1/blob/main/Angels-Banner-Bot-1.png" width="1080x240" alt="Angelss Logo">
 </p>
 
 <p align="center">
