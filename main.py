@@ -216,19 +216,17 @@ FFMPEG_OPTIONS = {
         '-reconnect 1 '
         '-reconnect_streamed 1 '
         '-reconnect_delay_max 5 '
-        '-nostdin '
-        '-buffer_size 1M '             # Buffer 1MB cukup untuk RAM 2GB agar stabil
-        '-err_detect ignore_err '      # Jangan langsung skip kalau ada error kecil
+        '-nostdin'
     ),
     'options': (
-        '-vn '                         # Buang stream video
-        # Filter Audio: Limiter saja untuk mencegah pecah, buang Bass/Treble/Dynaudnorm yang bikin mendem
-        '-af "loudnorm=I=-16:TP=-1.5:LRA=11" ' 
-        '-ac 2 '                       # Stereo
-        '-ar 48000 '                   # Frekuensi standar Discord
-        '-acodec pcm_s16le '           # Menggunakan PCM (Sangat ringan untuk 2vCPU)
+        '-vn '
+        '-ac 2 '
+        '-ar 48000 '
+        '-b:a 128k '  # Membatasi bitrate agar koneksi stabil
+        '-af "volume=0.8" ' # Filter simpel saja, jangan pakai loudnorm yang berat
     )
 }
+
 
 
 
