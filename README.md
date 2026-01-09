@@ -1,6 +1,6 @@
 # 💿 Angelss Music Bot • V17 FINAL FIX
 <p align="center">
-  <img src="https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1/blob/main/Angels-Banner-Bot-1.png" width=580x50" alt="Angelss Logo">
+  <img src="https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1/blob/main/Angels-Banner-Bot-1.png" width="240" alt="Angelss Logo">
 </p>
 
 <p align="center">
@@ -19,12 +19,23 @@
 
 ---
 
-## ⚡ Key Technical Features
-* **High-Performance Audio Engine**: Dioptimalkan untuk **2vCPU / 2GB RAM** (Octavia Specs).
-* **Interactive Mixer Console**: Dashboard real-time dengan tombol kendali dinamis.
-* **Smart Queue System**: Menggunakan `collections.deque` untuk manajemen antrean yang ringan.
-* **Bypass YouTube Restriction**: Dilengkapi dengan sistem sinkronisasi `youtube_cookies.txt` untuk mencegah Error 403.
-* **Auto-Cleaning Session**: Menghapus log dan dashboard lama secara otomatis untuk menjaga kebersihan channel.
+## ✨ Kenapa Bot Ini Keren?
+Gak cuma sekedar putar musik, bot ini punya "jeroan" yang udah di-tweak habis-habisan:
+* **🔊 Crystal Clear Sound**: Bitrate audio sampai **256kbps**. Telinga kamu bakal dimanjakan!
+* **⚡ Octavia Optimized**: Udah disetel pas banget buat resources **2vCPU / 2GB RAM**.
+* **🎯 Smart Search**: Gak perlu copas link terus, tinggal ketik judul, pilih nomornya, beres!
+* **📜 Interactive Dashboard**: Ada tombol-tombol buat Jeda, Lanjut, Skip, dan atur Volume langsung di chat.
+* **🧹 Anti-Sampah**: Bot ini rajin bersih-bersih chat lama biar channel kamu tetep rapi.
+
+## 🛠️ Tech Stack & Requirements
+* **Language**: Python 3.10 (Wajib banget ya, biar stabil!)
+* **Library Utama**: `discord.py`, `yt-dlp`, `static-ffmpeg`
+* **Infrastructure**: Octavia Premium Hosting (Jakarta Cluster)
+
+## ⚙️ Cara Pemasangan (Buat yang Diizinin)
+1. **Clone Project**:
+   ```bash
+   git clone [https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1.git](https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1.git)
 
 ---
 
