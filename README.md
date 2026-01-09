@@ -21,6 +21,7 @@
 ---
 
 
+
 ## ✨ Kenapa Bot Ini Keren?
 Gak cuma sekedar putar musik, bot ini punya "jeroan" yang udah di-tweak habis-habisan:
 * **🔊 Crystal Clear Sound**: Bitrate audio sampai **256kbps**. Telinga kamu bakal dimanjakan!
@@ -35,7 +36,9 @@ Gak cuma sekedar putar musik, bot ini punya "jeroan" yang udah di-tweak habis-ha
 * **Infrastructure**: Octavia Premium Hosting (Jakarta Cluster)
 
 
+
 ---
+
 
 
 ## 🏗️ Project Architecture
