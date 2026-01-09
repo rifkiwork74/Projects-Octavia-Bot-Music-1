@@ -1,6 +1,6 @@
 # 💿 Angelss Music Bot • V17 FINAL FIX
 <p align="center">
-  <img src="https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1/blob/main/Angels-Banner-Bot-1.png" width="540" alt="Angelss Logo">
+  <img src="https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1/blob/main/Angels-Banner-Bot-1.png" width="240" alt="Angelss Logo">
 </p>
 
 <p align="center">
@@ -17,7 +17,9 @@
 
 > **Project Update V17:** Sinkronisasi total antara Dashboard UI, Volume Control, dan Session Memory Management.
 
+
 ---
+
 
 ## ✨ Kenapa Bot Ini Keren?
 Gak cuma sekedar putar musik, bot ini punya "jeroan" yang udah di-tweak habis-habisan:
@@ -32,12 +34,9 @@ Gak cuma sekedar putar musik, bot ini punya "jeroan" yang udah di-tweak habis-ha
 * **Library Utama**: `discord.py`, `yt-dlp`, `static-ffmpeg`
 * **Infrastructure**: Octavia Premium Hosting (Jakarta Cluster)
 
-## ⚙️ Cara Pemasangan (Buat yang Diizinin)
-1. **Clone Project**:
-   ```bash
-   git clone [https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1.git](https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1.git)
 
 ---
+
 
 ## 🏗️ Project Architecture
 ```text
@@ -47,3 +46,13 @@ Gak cuma sekedar putar musik, bot ini punya "jeroan" yang udah di-tweak habis-ha
 ├── 📄 .gitignore            # Security filters for Git
 ├── 📄 requirements.txt      # Dependency manifest
 └── 📄 youtube_cookies.txt   # YouTube Auth Session
+
+
+---
+
+
+## ⚙️ Cara Pemasangan (Buat yang Diizinin)
+1. **Clone Project**:
+   ```bash
+   git clone [https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1.git](https://github.com/rifkiwork74/Projects-Octavia-Bot-Music-1.git)
+   
