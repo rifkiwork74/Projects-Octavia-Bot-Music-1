@@ -281,8 +281,11 @@ class ModernBot(commands.Bot):
     async def setup_hook(self):
         """Dijalankan sekali untuk sinkronisasi command saat bot start."""
         try:
+            # Tambahkan baris ini untuk mendaftarkan grup secara eksplisit sebelum sync
+            # bot.tree.add_command(voice_group) # Jika group didefinisikan di luar, pastikan sudah terpanggil
+            
             synced = await self.tree.sync()
-            logger.info(f"✅ Berhasil sinkronisasi {len(synced)} slash commands.")
+            logger.info(f"✅ Berhasil sinkronisasi {len(synced)} slash commands secara global.")
         except Exception as e:
             logger.error(f"❌ Gagal sinkronisasi command: {e}")
 
