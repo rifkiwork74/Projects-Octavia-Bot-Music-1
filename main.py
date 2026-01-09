@@ -192,10 +192,14 @@ YTDL_OPTIONS = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0', # PENTING: Mencegah konflik IPv6 di hosting
+	'-probesize 10M '      # TAMBAHKAN INI: Memperbesar buffer pencarian stream
+    '-analyzeduration 10M ' # TAMBAHKAN INI: Memberi waktu lebih untuk analisis stream
     'cookiefile': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
     # User-Agent palsu agar tidak dideteksi sebagai bot oleh YouTube
-    'headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+	'headers': {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://www.google.com/,
     }
 }
 
