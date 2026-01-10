@@ -195,37 +195,47 @@ queues = {}
 
 
 
-# --- [ 1. SETTINGS - FORMAT CONVERTER (OPTIMIZED FOR HOSTING) ] ---
+# --- 2. SETTINGS - FORMAT CONVERTER ---
 #
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
-    #'extractaudio': True,
-    #'audioformat': 'mp3',
-    #'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
     'noplaylist': True,
     'nocheckcertificate': True,
-    'ignoreerrors': True,
+    'ignoreerrors': False,
     'logtostderr': False,
     'quiet': True,
     'no_warnings': True,
-    'default_search': 'auto',
     'source_address': '0.0.0.0',
-    'cookiefile': 'youtube_cookies.txt', 
+    'cookiefile': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
     'cachedir': False,
-    'headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-    }
 }
 
-# --- [ 1. SETTINGS - FFMPEG OPTIMIZED ] ---
+
+
+
+
+
+
+# --- 3. SETTINGS - FORMAT AUDIO PLAYER ---
+#
 FFMPEG_OPTIONS = {
-    # -nostdin mencegah bot hang di panel hosting
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
-    # -ss 00:00:00 memaksa output mulai dari awal
-    # -af "aresample=async=1" sinkronisasi audio jika terjadi lag
-    'options': '-vn -nostats -loglevel 0 -ss 00:00:00 -af "aresample=async=1"',
+    'before_options': (
+        '-reconnect 1 '
+        '-reconnect_streamed 1 '
+        '-reconnect_delay_max 5 '
+        '-nostdin '          
+        '-probesize 7M '    
+        '-analyzeduration 5M'
+    ),
+    'options': (
+    '-vn '
+    '-af "alimiter=limit=0.9, dynaudnorm=f=1000:g=31:m=5.0, treble=g=2, bass=g=5" '
+    '-ac 2 '
+    '-ar 48000 '
+    '-b:a 192k '         
+    '-vbr on '
+    '-compression_level 5'
+	)
 }
 
 
