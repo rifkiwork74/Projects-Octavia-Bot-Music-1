@@ -978,9 +978,9 @@ async def masuk(interaction: discord.Interaction):
     target_channel = interaction.user.voice.channel
 
     if vc:
-    	logger.info(f"🎙️ VOICE JOIN: {interaction.user.name} memanggil bot ke {target_channel.name}")
+        logger.info(f"🎙️ VOICE JOIN: {interaction.user.name} memanggil bot")
         if vc.channel.id == target_channel.id:
-            return await interaction.response.send_message("⚠️ Aku sudah ada di sini bersamamu!", ephemeral=True)
+            return await interaction.response.send_message("⚠️ Aku sudah di sini!", ephemeral=True)
         await vc.move_to(target_channel)
     else:
         await target_channel.connect()
