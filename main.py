@@ -199,9 +199,9 @@ queues = {}
 #
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
-    'extractaudio': True,
-    'audioformat': 'mp3',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    #'extractaudio': True,
+    #'audioformat': 'mp3',
+    #'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': True,
     'nocheckcertificate': True,
@@ -212,6 +212,7 @@ YTDL_OPTIONS = {
     'default_search': 'auto',
     'source_address': '0.0.0.0',
     'cookiefile': 'youtube_cookies.txt', 
+    'cachedir': False,
     'headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -219,7 +220,10 @@ YTDL_OPTIONS = {
 }
 
 FFMPEG_OPTIONS = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    # 'before_options' fokus pada stabilitas koneksi input
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
+    
+    # 'options' fokus pada manipulasi output audio
     'options': '-vn -nostats -loglevel 0 -ss 00:00:00 -af "aresample=async=1"',
 }
 
