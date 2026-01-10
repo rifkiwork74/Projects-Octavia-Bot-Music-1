@@ -219,11 +219,12 @@ YTDL_OPTIONS = {
     }
 }
 
+# --- [ 1. SETTINGS - FFMPEG OPTIMIZED ] ---
 FFMPEG_OPTIONS = {
-    # 'before_options' fokus pada stabilitas koneksi input
+    # -nostdin mencegah bot hang di panel hosting
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
-    
-    # 'options' fokus pada manipulasi output audio
+    # -ss 00:00:00 memaksa output mulai dari awal
+    # -af "aresample=async=1" sinkronisasi audio jika terjadi lag
     'options': '-vn -nostats -loglevel 0 -ss 00:00:00 -af "aresample=async=1"',
 }
 
@@ -391,8 +392,7 @@ bot = ModernBot()
 
 
 
-# --- [ 6. QUEUE SYSTEM (SINKRON DENGAN GLOBAL STORAGE ] ---
-#
+# --- [ 6. QUEUE SYSTEM (SINKRON DENGAN GLOBAL STORAGE) ] ---
 #
 class MusicQueue:
     """Objek untuk menyimpan data musik spesifik per server (Guild)."""
@@ -400,7 +400,12 @@ class MusicQueue:
         # deque digunakan untuk efisiensi performa saat popleft (ganti lagu)
         self.queue = deque()
         self.current_info = None
-        self.is_loading = False  # <--- TAMBAHKAN INI (Sebagai Satpam)
+        
+        # --- [ TAMBAHAN BARU ] ---
+        self.is_loading = False  # Satpam untuk mencegah tabrakan proses /play ganda
+        self.audio_source = None # Reference untuk membersihkan memori RAM 2GB
+        # ------------------------
+        
         self.loop = False
         self.volume = 0.5  # Default volume standar 50%
         self.last_dashboard = None
@@ -412,27 +417,37 @@ class MusicQueue:
         """Reset total data sesi (digunakan saat command /stop)."""
         self.queue.clear()
         self.current_info = None
+        
+        # --- [ TAMBAHAN PEMBERSIHAN ] ---
+        # Memaksa FFmpeg berhenti total saat bot distop
+        if self.audio_source:
+            try:
+                self.audio_source.cleanup()
+            except:
+                pass
+        self.audio_source = None
+        # -------------------------------
+        
+        if self.last_dashboard:
+            try: self.last_dashboard.delete()
+            except: pass
+            
         self.last_dashboard = None
         self.last_search_msg = None
         self.last_queue_msg = None
 
 def get_queue(guild_id):
-    """
-    Mengambil data antrean server. 
-    Jika belum ada, akan membuat instance MusicQueue baru.
-    """
+    """Mengambil data antrean server. Jika belum ada, buat baru."""
     if guild_id not in queues:
         queues[guild_id] = MusicQueue()
     return queues[guild_id]
 
 def delete_queue(guild_id):
-    """
-    Menghapus data dari RAM. 
-    Wajib dipanggil saat bot disconnect agar hemat RAM (2GB RAM Limit).
-    """
+    """Menghapus data dari RAM. Wajib saat bot disconnect (Hemat RAM 2GB)."""
     if guild_id in queues:
+        # Bersihkan audio source dulu sebelum dihapus dari memori
+        queues[guild_id].clear_all()
         del queues[guild_id]
-
 
 
 
@@ -910,83 +925,61 @@ class MusicDashboard(discord.ui.View):
 #
 
 # ==============================================================================
-# 💿 SECTION: CORE MUSIC ENGINE (START, NEXT, & PLAY LOGIC)
+# 💿 SECTION: CORE MUSIC ENGINE (REFINED FOR 00:00 START)
 # ==============================================================================
 
-# --- [ 12.1. NEXT LOGIC ] ---
 async def next_logic(interaction):
-    """Logika otomatis untuk memutar lagu berikutnya dari antrean dengan reset durasi."""
+    """Logika otomatis pindah lagu dengan pembersihan buffer total."""
     q = get_queue(interaction.guild_id)
     vc = interaction.guild.voice_client
     
-    # 1. BERSIHKAN DASHBOARD LAMA SEGERA
-    # Ini penting agar status 'Playing' di Discord berhenti dulu sejenak
+    # 1. STOP & JEDA (Reset Timestamp Discord)
+    if vc:
+        vc.stop() # Hentikan suara sepenuhnya
+        # Jeda 2 detik sangat krusial agar Discord mereset durasi di UI
+        await asyncio.sleep(2.0) 
+    
+    # 2. BERSIHKAN DASHBOARD LAMA
     if q.last_dashboard:
-        try:
-            await q.last_dashboard.delete()
-        except:
-            pass
+        try: await q.last_dashboard.delete()
+        except: pass
         q.last_dashboard = None
 
-    # 2. JEDA RESET (Buffer Clearance)
-    # 2 detik sudah ideal untuk memastikan FFmpeg melepaskan file/stream lama
-    await asyncio.sleep(2)
-    
     if q.queue:
-        # 3. AMBIL LAGU BERIKUTNYA
+        # 3. AMBIL LAGU & UPDATE INFO
         next_song = q.queue.popleft()
-        q.current_info = next_song 
-        # 4. DOUBLE CHECK VOICE CLIENT
-        # Jika bot masih memutar sisa buffer, paksa berhenti di sini
-        if vc and (vc.is_playing() or vc.is_paused()):
-            vc.stop()
-            await asyncio.sleep(0.5) # Jeda ekstra mikro setelah stop paksa
-
-        # Panggil start_stream yang sudah kita tweak tadi
-        await start_stream(interaction, next_song['url'])
+        q.current_info = next_song # Pastikan info lagu terbaru tersimpan
         
+        # Panggil pemutar
+        await start_stream(interaction, next_song['url'])
     else:
-        # LOGIKA JIKA ANTREAN HABIS
+        # Antrean Habis
         emb_finish = discord.Embed(
             title="✨ Antrean Selesai",
-            description="Semua lagu telah diputar. Bot standby dalam mode hemat daya. 💤",
+            description="Semua lagu telah diputar. Bot standby. 💤",
             color=0x34495e
         )
-        
         channel = bot.get_channel(q.text_channel_id) or interaction.channel
         if channel:
             await channel.send(embed=emb_finish, delete_after=15)
 
-
-
-
-
-
-# --- [ 12.2. START STREAM LOGIC (ENHANCED STABILITY) ] ---
-
 async def start_stream(interaction, url):
-    """Mesin utama dengan Error Handling tingkat lanjut & Pembersihan Buffer Otomatis."""
+    """Mesin utama dengan Force 00:00 Start & Memory Cleanup."""
     q = get_queue(interaction.guild_id)
-    q.text_channel_id = interaction.channel.id
-    
     vc = interaction.guild.voice_client
-    if not vc or not vc.is_connected(): 
-        logger.error("Gagal Start Stream: Bot tidak terhubung ke Voice Channel.")
-        return
+    
+    if not vc or not vc.is_connected(): return
 
     try:
-        # --- [ TWEAK 1: PEMBERSIHAN BUFFER KERAS ] ---
-        if vc.is_playing() or vc.is_paused():
-            vc.stop()
-            # Jeda agar buffer Discord benar-benar kosong sebelum memuat stream baru
-            await asyncio.sleep(1.5) 
-
-        # Paksa hapus audio_source lama dari memory jika tersimpan di class Queue
-        if hasattr(q, 'audio_source') and q.audio_source:
-            try:
-                q.audio_source.cleanup()
-            except:
-                pass
+        # --- [ TWEAK: PEMBERSIHAN MEMORI RAM 2GB ] ---
+        # Hapus source lama agar tidak terjadi 'ghost audio'
+        if vc.source:
+            try: vc.source.cleanup()
+            except: pass
+            
+        if q.audio_source:
+            try: q.audio_source.cleanup()
+            except: pass
 
         # 1. Scraping data YouTube
         data = await asyncio.wait_for(
@@ -994,44 +987,28 @@ async def start_stream(interaction, url):
             timeout=35
         )
         
-        if data is None:
-            raise Exception("Cookies Expired atau IP Terblokir")
-
-        if 'entries' in data:
-            data = data['entries'][0]
-
+        if 'entries' in data: data = data['entries'][0]
         stream_url = data.get('url')
-        if not stream_url:
-            raise Exception("Stream URL tidak ditemukan")
 
-        # --- [ TWEAK 2: PAKSA START DARI 00:00 ] ---
-        # Menggunakan FFMPEG_OPTIONS yang sudah kita bahas sebelumnya
+        # 2. INISIALISASI FFmpeg (PASTI MULAI 00:00)
+        # executable="ffmpeg" pastikan FFmpeg terinstall di panel Octavia
         audio_source = discord.FFmpegPCMAudio(stream_url, executable="ffmpeg", **FFMPEG_OPTIONS)
         source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
         
-        # Simpan reference source ke queue untuk pembersihan nantinya
+        # Simpan reference ke queue
         q.audio_source = audio_source 
 
         # 3. Callback Handlers
         def after_playing(error):
             if error: logger.error(f"⚠️ Player Error: {error}")
-            future = asyncio.run_coroutine_threadsafe(next_logic(interaction), bot.loop)
-            try:
-                future.result(timeout=1)
-            except:
-                pass 
+            asyncio.run_coroutine_threadsafe(next_logic(interaction), bot.loop)
 
-        # 4. Eksekusi Play
+        # 4. EKSEKUSI PLAY
         vc.play(source, after=after_playing)
         
-        # 5. Dashboard Update
-        if q.last_dashboard:
-            try: await q.last_dashboard.delete()
-            except: pass
-            q.last_dashboard = None 
-            
+        # 5. DASHBOARD UPDATE (REFRESH UI)
         durasi_detik = data.get('duration', 0)
-        durasi_str = str(datetime.timedelta(seconds=durasi_detik)) if durasi_detik else "Live / Unknown"
+        durasi_str = str(datetime.timedelta(seconds=durasi_detik)) if durasi_detik else "Live"
 
         emb = discord.Embed(
             title="🎶 Sedang Diputar", 
@@ -1041,7 +1018,6 @@ async def start_stream(interaction, url):
         emb.add_field(name="⏱️ Durasi", value=f"`{durasi_str}`", inline=True)
         emb.add_field(name="🔊 Volume", value=f"`{int(q.volume * 100)}%`", inline=True)
         emb.set_thumbnail(url=data.get('thumbnail'))
-        emb.set_footer(text=f"Requested by {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
         
         q.last_dashboard = await interaction.channel.send(
             embed=emb, 
@@ -1049,8 +1025,17 @@ async def start_stream(interaction, url):
         )
         
     except Exception as e:
-        logger.error(f"🔥 CRITICAL ERROR: {e}")
+        logger.error(f"🔥 Start Stream Error: {e}")
+        q.is_loading = False
         await next_logic(interaction)
+
+
+
+
+
+# --- [ 12.2. START STREAM LOGIC (ENHANCED STABILITY) ] ---
+
+
 
 
 
