@@ -176,14 +176,12 @@ queues = {}
 
 
 
-# --- [ 1. SETTINGS - FORMAT CONVERTER (OPTIMIZED FOR HOSTING) ] ---
-#
-# --- [ 1. SETTINGS - FORMAT CONVERTER (OPTIMIZED) ] ---
+
+
+# --- [ 1. YTDL OPTIONS: High Quality Source Fetching ] ---
 #
 YTDL_OPTIONS = {
-    'format': 'bestaudio/best',
-    'extractaudio': True,
-    'audioformat': 'mp3',
+    'format': 'bestaudio/best',      # Paksa ambil audio source kualitas tertinggi (biasanya Opus 160kbps+)
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': True,
@@ -194,20 +192,39 @@ YTDL_OPTIONS = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
-    # Menghubungkan file cookies yang kamu kirim tadi
     'cookiefile': 'youtube_cookies.txt', 
+    
+    # Tweak Khusus RAM 2GB: Memperbesar buffer download di awal
+    # Agar tidak buffering meski sinyal YouTube naik turun
+    'http_chunk_size': 10485760, # 10MB chunk size
+    
     'headers': {
-        # User-Agent ini harus kuat untuk menembus proteksi YouTube
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
     }
 }
 
-
-
+# --- [ 2. FFMPEG OPTIONS: The "Audiophile" Processing ] ---
 FFMPEG_OPTIONS = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn',
+    'before_options': (
+        '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 '
+        # Optimization untuk RAM 2GB:
+        '-probesize 15M '         # Analisa data lebih banyak sebelum play (mengurangi kemungkinan error format)
+        '-analyzeduration 15M '   # Durasi analisa diperpanjang
+    ),
+    'options': (
+        '-vn '                    # Hapus Video (Wajib)
+        '-threads 2 '             # MEMANFAATKAN 2 vCPU: Memaksa FFmpeg pakai 2 core untuk processing
+        '-ar 48000 '              # FORCE 48kHz: Standar native Discord (agar tidak ada down-sampling)
+        '-ac 2 '                  # Stereo
+        '-b:a 192k '              # Bitrate Audio target
+        '-bufsize 5000k '         # Buffer size hosting (aman untuk RAM 2GB)
+        
+        # --- RAHASIA TREBLE JERNIH (AUDIO FILTER) ---
+        # treble=g=5: Mengangkat frekuensi tinggi sebesar 5dB (Jernih tapi tidak menusuk)
+        # volume=0.9: Sedikit menurunkan gain agar bass "glerr" tidak bikin audio pecah (clipping) saat treble naik
+        '-af "treble=g=5,volume=0.9"' 
+    )
 }
 
 
