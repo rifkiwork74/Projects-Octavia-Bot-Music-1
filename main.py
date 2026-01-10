@@ -957,7 +957,7 @@ async def next_logic(interaction):
 
 # --- [ 12.2. START STREAM LOGIC (ENHANCED STABILITY) ] ---
 async def start_stream(interaction, url):
-    """Mesin utama dengan Error Handling tingkat lanjut."""
+    """Mesin utama dengan Error Handling tingkat lanjut & Notifikasi Cookies."""
     q = get_queue(interaction.guild_id)
     q.text_channel_id = interaction.channel.id
     
@@ -967,45 +967,45 @@ async def start_stream(interaction, url):
         return
 
     try:
-        # 1. Scraping data YouTube (Timeout 35 detik agar tidak hang)
+        # 1. Scraping data YouTube
         data = await asyncio.wait_for(
             bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False)),
             timeout=35
         )
         
+        # --- [ TITIK PENGECEKAN UTAMA (ITERABLE FIX) ] ---
+        if data is None:
+            raise Exception("Cookies Expired atau IP Terblokir")
+
         if 'entries' in data:
             data = data['entries'][0]
 
         stream_url = data.get('url')
         if not stream_url:
-            raise Exception("Stream URL kosong / Terblokir YouTube.")
+            raise Exception("Stream URL tidak ditemukan")
 
         # 2. Inisialisasi Audio Source
         audio_source = discord.FFmpegPCMAudio(stream_url, executable="ffmpeg", **FFMPEG_OPTIONS)
         source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
         
-        # 3. Callback Handlers (Audit Fix: Menjamin kelancaran antrean)
+        # 3. Callback Handlers
         def after_playing(error):
             if error: logger.error(f"⚠️ Player Error: {error}")
-            
-            # Gunakan fungsi bantuan agar thread-safe dan stabil
             future = asyncio.run_coroutine_threadsafe(next_logic(interaction), bot.loop)
             try:
-                future.result(timeout=1) # Memberi sinyal ke loop untuk segera jalan
+                future.result(timeout=1)
             except:
                 pass 
-
 
         # 4. Eksekusi
         if vc.is_playing(): vc.stop()
         vc.play(source, after=after_playing)
         
-        # 5. Dashboard Update
+        # 5. Dashboard Update (Embed Rapih)
         if q.last_dashboard:
             try: await q.last_dashboard.delete()
             except: pass
             
-        # Hitung durasi
         durasi_detik = data.get('duration', 0)
         durasi_str = str(datetime.timedelta(seconds=durasi_detik)) if durasi_detik else "Live / Unknown"
 
@@ -1019,28 +1019,34 @@ async def start_stream(interaction, url):
         emb.set_thumbnail(url=data.get('thumbnail'))
         emb.set_footer(text=f"Requested by {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
         
-        # Kirim Dashboard Baru
         q.last_dashboard = await interaction.channel.send(
             embed=emb, 
             view=MusicDashboard(interaction.guild_id)
         )
         
-    except asyncio.TimeoutError:
-        await interaction.channel.send("⚠️ **Timeout:** Koneksi ke YouTube lambat. Mencoba lagu berikutnya...", delete_after=10)
-        await next_logic(interaction)
-        
     except Exception as e:
         logger.error(f"🔥 CRITICAL ERROR: {e}")
         error_msg = str(e).lower()
         
-        # Pesan error yang lebih manusiawi
-        if "sign in" in error_msg or "403" in error_msg:
-            pesan = "⚠️ **Gagal:** YouTube menolak akses (Cookie Expired/IP Blocked)."
+        # --- [ RESPON EMBED ERROR YANG RAPIH ] ---
+        embed_err = discord.Embed(title="🚫 System Failure", color=0xff4757)
+        
+        if "sign in" in error_msg or "cookie" in error_msg or "expired" in error_msg:
+            embed_err.description = (
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "⚠️ **COOKIES EXPIRED / DETECTED AS BOT**\n\n"
+                "YouTube memblokir akses bot. Segera ganti file `youtube_cookies.txt` "
+                "dengan cookies yang baru agar bot bisa memutar musik kembali.\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
+            embed_err.set_footer(text="Aksi diperlukan: Update Cookies")
         else:
-            pesan = f"⚠️ **Error:** `{str(e)[:100]}`"
+            embed_err.description = f"❌ **Terjadi Kesalahan:**\n`{str(e)[:150]}`"
+            embed_err.set_footer(text="Coba lagu lain atau lapor developer")
 
-        await interaction.channel.send(pesan, delete_after=10)
-        # Jeda sebentar sebelum skip otomatis agar tidak spam error
+        await interaction.channel.send(embed=embed_err, delete_after=20)
+        
+        # Jeda agar tidak spam skip jika banyak lagu di queue yang error
         await asyncio.sleep(3)
         await next_logic(interaction)
 
