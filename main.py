@@ -68,6 +68,25 @@ import yt_dlp
 
 
 
+import threading
+from flask import Flask
+
+# Inisialisasi Flask
+app = Flask('')
+
+@app.route('/')
+def home():
+    # Pesan ini yang akan dibaca oleh UptimeRobot
+    return "Angelss Music Bot Status: 🟢 ONLINE"
+
+def run():
+    # PENTING: Port harus sesuai dengan alokasi di gambar panel (25618)
+    app.run(host='0.0.0.0', port=25618)
+
+def keep_alive():
+    t = threading.Thread(target=run)
+    t.start()
+
 
 
 
@@ -200,11 +219,9 @@ YTDL_OPTIONS = {
 }
 
 FFMPEG_OPTIONS = {
-    # -ss 00:00:00 Memaksa stream mulai dari nol mutlak
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss 00:00:00',
-    'options': '-vn -nostats -loglevel 0',
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    'options': '-vn -nostats -loglevel 0 -ss 00:00:00 -af "aresample=async=1"',
 }
-
 
 
 
@@ -379,6 +396,7 @@ class MusicQueue:
         # deque digunakan untuk efisiensi performa saat popleft (ganti lagu)
         self.queue = deque()
         self.current_info = None
+        self.is_loading = False  # <--- TAMBAHKAN INI (Sebagai Satpam)
         self.loop = False
         self.volume = 0.5  # Default volume standar 50%
         self.last_dashboard = None
@@ -913,7 +931,7 @@ async def next_logic(interaction):
     if q.queue:
         # 3. AMBIL LAGU BERIKUTNYA
         next_song = q.queue.popleft()
-        
+        q.current_info = next_song 
         # 4. DOUBLE CHECK VOICE CLIENT
         # Jika bot masih memutar sisa buffer, paksa berhenti di sini
         if vc and (vc.is_playing() or vc.is_paused()):
@@ -954,10 +972,17 @@ async def start_stream(interaction, url):
 
     try:
         # --- [ TWEAK 1: PEMBERSIHAN BUFFER KERAS ] ---
-        # Menghentikan vc dan memberi jeda agar FFmpeg lama benar-benar mati sebelum scraping
         if vc.is_playing() or vc.is_paused():
             vc.stop()
-            await asyncio.sleep(1.5) # Jeda krusial untuk reset koneksi stream
+            # Jeda agar buffer Discord benar-benar kosong sebelum memuat stream baru
+            await asyncio.sleep(1.5) 
+
+        # Paksa hapus audio_source lama dari memory jika tersimpan di class Queue
+        if hasattr(q, 'audio_source') and q.audio_source:
+            try:
+                q.audio_source.cleanup()
+            except:
+                pass
 
         # 1. Scraping data YouTube
         data = await asyncio.wait_for(
@@ -976,14 +1001,16 @@ async def start_stream(interaction, url):
             raise Exception("Stream URL tidak ditemukan")
 
         # --- [ TWEAK 2: PAKSA START DARI 00:00 ] ---
-        # Re-inisialisasi source dengan FFMPEG_OPTIONS yang mengandung -ss 00:00:00
+        # Menggunakan FFMPEG_OPTIONS yang sudah kita bahas sebelumnya
         audio_source = discord.FFmpegPCMAudio(stream_url, executable="ffmpeg", **FFMPEG_OPTIONS)
         source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
         
+        # Simpan reference source ke queue untuk pembersihan nantinya
+        q.audio_source = audio_source 
+
         # 3. Callback Handlers
         def after_playing(error):
             if error: logger.error(f"⚠️ Player Error: {error}")
-            # Pastikan menggunakan coroutine agar sinkron ke lagu berikutnya
             future = asyncio.run_coroutine_threadsafe(next_logic(interaction), bot.loop)
             try:
                 future.result(timeout=1)
@@ -991,16 +1018,13 @@ async def start_stream(interaction, url):
                 pass 
 
         # 4. Eksekusi Play
-        # Sekali lagi pastikan tidak ada yang main (Double check safety)
-        if vc.is_playing(): vc.stop()
-        
         vc.play(source, after=after_playing)
         
-        # 5. Dashboard Update (Pembersihan Dashboard Lama agar durasi reset di UI)
+        # 5. Dashboard Update
         if q.last_dashboard:
             try: await q.last_dashboard.delete()
             except: pass
-            q.last_dashboard = None # Reset objek dashboard
+            q.last_dashboard = None 
             
         durasi_detik = data.get('duration', 0)
         durasi_str = str(datetime.timedelta(seconds=durasi_detik)) if durasi_detik else "Live / Unknown"
@@ -1015,18 +1039,14 @@ async def start_stream(interaction, url):
         emb.set_thumbnail(url=data.get('thumbnail'))
         emb.set_footer(text=f"Requested by {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
         
-        # Kirim dashboard baru (Ini akan me-refresh activity bot ke 00:00)
         q.last_dashboard = await interaction.channel.send(
             embed=emb, 
             view=MusicDashboard(interaction.guild_id)
         )
         
     except Exception as e:
-        # ... (Logika Error tetap sama seperti kode aslimu) ...
         logger.error(f"🔥 CRITICAL ERROR: {e}")
-        # (Tambahkan pembersihan jika error terjadi di tengah jalan)
         await next_logic(interaction)
-
 
 
 
@@ -1044,9 +1064,16 @@ async def start_stream(interaction, url):
 
 
 async def play_music(interaction, url):
-    """Fungsi kontrol untuk memutuskan apakah lagu diputar langsung atau antre."""
+    """Fungsi kontrol utama dengan sistem Anti-Race Condition (Locking)."""
     q = get_queue(interaction.guild_id)
     q.text_channel_id = interaction.channel.id
+    
+    # --- [ PROTECTION: ANTI-TABRAKAN ] ---
+    if q.is_loading:
+        return await interaction.followup.send(
+            "⏳ **Sistem Sibuk:** Bot sedang memproses permintaan sebelumnya. Tunggu sebentar!", 
+            ephemeral=True
+        )
     
     # 1. Koneksi otomatis ke Voice Channel
     if not interaction.guild.voice_client:
@@ -1054,22 +1081,22 @@ async def play_music(interaction, url):
             try:
                 await interaction.user.voice.channel.connect()
             except Exception as e:
-                return await interaction.followup.send(f"❌ Gagal koneksi: {e}", ephemeral=True)
+                return await interaction.followup.send(f"❌ Gagal koneksi ke VC: {e}", ephemeral=True)
         else:
             return await interaction.followup.send("❌ **Gagal:** Kamu harus masuk ke Voice Channel dulu!", ephemeral=True)
     
     vc = interaction.guild.voice_client
     
-    # 2. Cek apakah bot sedang memutar musik atau dijeda
+    # 2. Cek apakah bot sedang aktif (Main atau Jeda)
     if vc.is_playing() or vc.is_paused():
         try:
-            # Ambil info lagu untuk ditampilkan di pesan antrean
+            q.is_loading = True # Kunci sementara saat scraping
+            # Ambil info lagu untuk antrean
             data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
             if 'entries' in data: data = data['entries'][0]
 
             q.queue.append({'title': data['title'], 'url': url})
             
-            # --- TETAP PAKAI EMBED ASLI KAMU ---
             emb_q = discord.Embed(
                 title="📥 Antrean Ditambahkan",
                 description=f"✨ **[{data['title']}]({url})**",
@@ -1080,14 +1107,29 @@ async def play_music(interaction, url):
             
         except Exception as e:
             await interaction.followup.send(f"⚠️ Gagal menambahkan ke antrean: {str(e)[:50]}", ephemeral=True)
+        finally:
+            q.is_loading = False # Buka kunci
     
     else:
-        # 3. Jika bot sedang menganggur, bersihkan player lama dulu (Anti-Stuck)
-        if vc.is_playing(): 
-            vc.stop()
+        # 3. Jika bot sedang menganggur, jalankan mesin pemutar
+        try:
+            q.is_loading = True # Kunci pintu! 🔒
             
-        # Langsung jalankan mesin pemutar (Pastikan start_stream sudah pakai FFMPEG_OPTIONS hasil audit)
-        await start_stream(interaction, url)
+            # Pastikan jika ada sisa player lama, dimatikan dulu
+            if vc.is_playing(): 
+                vc.stop()
+            
+            # Langsung jalankan mesin pemutar (Start Stream)
+            await start_stream(interaction, url)
+            
+        except Exception as e:
+            logger.error(f"Error di play_music: {e}")
+            await interaction.followup.send("⚠️ Terjadi kesalahan saat memulai stream.", ephemeral=True)
+        finally:
+            # Berikan jeda sedikit sebelum membuka kunci agar FFmpeg benar-benar stabil
+            await asyncio.sleep(1)
+            q.is_loading = False # Buka pintu! 🔓
+
 
 
 
@@ -1584,8 +1626,13 @@ async def debug_system(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
 
-
 # ==============================================================================
 # 🚀 SECTION: START ENGINE
 # ==============================================================================
-bot.run(TOKEN)
+
+if __name__ == "__main__":
+    # Jalankan server web Flask untuk monitoring
+    keep_alive() 
+    
+    # Jalankan Bot Discord
+    bot.run(TOKEN)
