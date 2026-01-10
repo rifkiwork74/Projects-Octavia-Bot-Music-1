@@ -178,6 +178,8 @@ queues = {}
 
 # --- [ 1. SETTINGS - FORMAT CONVERTER (OPTIMIZED FOR HOSTING) ] ---
 #
+# --- [ 1. SETTINGS - FORMAT CONVERTER (OPTIMIZED) ] ---
+#
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
     'extractaudio': True,
@@ -191,32 +193,25 @@ YTDL_OPTIONS = {
     'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
-    'source_address': '0.0.0.0', # PENTING: Mencegah konflik IPv6 di hosting
-	'-probesize 10M '      # TAMBAHKAN INI: Memperbesar buffer pencarian stream
-    '-analyzeduration 10M ' # TAMBAHKAN INI: Memberi waktu lebih untuk analisis stream
+    'source_address': '0.0.0.0', 
+    
+    # Perbaikan pemanggilan Cookies
     'cookiefile': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
-    # User-Agent palsu agar tidak dideteksi sebagai bot oleh YouTube
-	'headers': {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Referer': 'https://www.google.com/',
+    
+    # User-Agent harus sinkron dengan browser tempat kamu ambil cookies (Leumuer/Chrome)
+    'headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
     }
 }
 
 
 
-# --- [ 2. SETTINGS - FORMAT AUDIO PLAYER (ANTI-CUTOFF) ] ---
-#
 FFMPEG_OPTIONS = {
-    'before_options': (
-        '-reconnect 1 '
-        '-reconnect_streamed 1 '
-        '-reconnect_at_eof 1 '  # FITUR BARU: Mencegah lagu putus di akhir
-        '-reconnect_delay_max 5 '
-        '-nostdin'
-    ),
-    'options': '-vn -loglevel panic'
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    'options': '-vn',
 }
+
 
 
 
