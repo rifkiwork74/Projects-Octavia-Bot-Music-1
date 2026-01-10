@@ -193,13 +193,11 @@ YTDL_OPTIONS = {
     'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
-    'source_address': '0.0.0.0', 
-    
-    # Perbaikan pemanggilan Cookies
-    'cookiefile': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
-    
-    # User-Agent harus sinkron dengan browser tempat kamu ambil cookies (Leumuer/Chrome)
+    'source_address': '0.0.0.0',
+    # Menghubungkan file cookies yang kamu kirim tadi
+    'cookiefile': 'youtube_cookies.txt', 
     'headers': {
+        # User-Agent ini harus kuat untuk menembus proteksi YouTube
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
     }
