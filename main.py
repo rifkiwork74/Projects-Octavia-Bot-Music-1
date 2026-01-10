@@ -37,21 +37,42 @@ import yt_dlp
 
 
 
+# ----- LIBRARY - WEB SOCKET
+from flask import Flask
+from threading import Thread
+
+web_app = Flask('')
+
+@web_app.route('/')
+def home():
+    return "Bot Music Angels is Online!"
+
+def run():
+    # Menggunakan port 25618 (pastikan port ini dibuka di panel Octavia kamu)
+    web_app.run(host='0.0.0.0', port=25618)
+
+def keep_alive():
+    """Fungsi untuk menjalankan Flask di thread terpisah agar tidak mengganggu bot."""
+    t = Thread(target=run)
+    t.start()
 
 
 
 
 # ==============================================================================
-# 📝 SECTION 0.5: PROFESSIONAL LOGGING SYSTEM (UPDATED)
+# 📝 SECTION 0.5: PROFESSIONAL LOGGING SYSTEM (SILENCED VERSION)
 # ==============================================================================
-# Konfigurasi logging tingkat industri.
-# Log akan disimpan ke file 'SystemLog_BotMusicAngels-1.log' dan juga ditampilkan di konsol.
-# ------------------------------------------------------------------------------
 
 # 1. Setup Logger Utama
 logger = logging.getLogger('Angelss_V17')
 logger.setLevel(logging.INFO)
 
+# --- [ TAMBAHKAN KODE INI DI SINI ] ---
+# Membisukan log "berisik" dari library luar agar tidak memenuhi konsol
+logging.getLogger('discord').setLevel(logging.WARNING)
+logging.getLogger('yt_dlp').setLevel(logging.ERROR)
+logging.getLogger('asyncio').setLevel(logging.WARNING)
+# --------------------------------------
 
 # 2. Format Log (Waktu - Level - Pesan)
 log_formatter = logging.Formatter(
@@ -59,22 +80,18 @@ log_formatter = logging.Formatter(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-
-# 3. Handler File (Menyimpan log ke file agar bisa dibaca nanti)
+# 3. Handler File
 file_handler = logging.FileHandler('SystemLog_BotMusicAngels-1.log', encoding='utf-8', mode='a')
 file_handler.setFormatter(log_formatter)
 
-
-# 4. Handler Konsol (Menampilkan log di layar running)
+# 4. Handler Konsol
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(log_formatter)
-
 
 # 5. Pasang Handler ke Logger
 if not logger.handlers:
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
-
 # ------------------------------------------------------------------------------
 
 
@@ -134,12 +151,13 @@ YTDL_OPTIONS = {
     'default_search': 'auto',
     'source_address': '0.0.0.0',
     'cookiefile': 'youtube_cookies.txt', 
+    'cachedir': False, # MATIKAN cache agar lagu selalu mulai dari awal 00:00
     'http_chunk_size': 10485760, 
     'headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
     }
 }
+
 
 
 
@@ -147,19 +165,22 @@ YTDL_OPTIONS = {
 FFMPEG_OPTIONS = {
     'before_options': (
         '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 '
-        '-probesize 15M '
-        '-analyzeduration 15M '
+        '-probesize 20M '
+        '-analyzeduration 20M '
     ),
     'options': (
         '-vn '
-        '-threads 2 '
+        '-threads 2 '  # Menggunakan 2 threads agar beban dibagi ke 2 vCPU
         '-ar 48000 '
         '-ac 2 '
         '-b:a 192k '
-        '-bufsize 5000k '
-        '-af "treble=g=3,volume=0.9"' 
+        '-f s16le '
+        '-bufsize 12000k ' # Buffer dinaikkan agar transisi antrean lancar
+        '-preset ultrafast ' # Mempercepat proses encoding agar lagu langsung mulai 00:00
+        '-af "loudnorm=I=-16:TP=-1.5:LRA=11,acompressor=threshold=-12dB:ratio=2:attack=20:release=100"'
     )
 }
+
 
 # --- [ 3. INISIALISASI YT-DLP ] ---
 ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
@@ -1151,7 +1172,7 @@ async def help_cmd(interaction: discord.Interaction):
         icon_url=interaction.user.display_avatar.url
     )
     
-    await interaction.response.send_message("✅ **Cek Menu Bantuan**", ephemeral=True) 
+    await interaction.response.send_message(embeds=[emb_guide, emb_dev])
 
 
 
@@ -1219,4 +1240,5 @@ async def debug_system(interaction: discord.Interaction):
 # ==============================================================================
 # 🚀 SECTION: START ENGINE
 # ==============================================================================
+keep_alive()  # Ini akan menjalankan web server kecil untuk dipantau UptimeRobot
 bot.run(TOKEN)
