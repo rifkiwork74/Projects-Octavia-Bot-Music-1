@@ -574,27 +574,13 @@ class MusicDashboard(discord.ui.View):
             await interaction.response.send_message(embed=emb, view=view_select)
             q.last_queue_msg = await interaction.original_response()
 
-    @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.primary)
-    async def sk(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        vc = interaction.guild.voice_client
-        if not vc: return await interaction.followup.send("❌ Tidak ada lagu.", ephemeral=True)
-        
-        logger.info(f"⏭️ DASHBOARD: {interaction.user.name} menekan tombol skip.")
-        vc.stop()
-        await interaction.followup.send("⏭️ **Skipped via Dashboard**", delete_after=5)
 
     @discord.ui.button(label="Stop", emoji="⏹️", style=discord.ButtonStyle.danger)
     async def st(self, interaction: discord.Interaction, button: discord.ui.Button):
-        q = get_queue(interaction.guild_id)
-        vc = interaction.guild.voice_client
-        q.queue.clear()
-        if vc: await vc.disconnect()
-        
-        logger.info(f"🛑 DASHBOARD: {interaction.user.name} mematikan bot.")
-        await interaction.response.send_message("🛑 **Stopped via Dashboard**", delete_after=5)
+        # Langsung panggil fungsi pusat
+        await fungsi_stop(interaction)
 
-
+    
 
 
 
@@ -610,7 +596,9 @@ class MusicDashboard(discord.ui.View):
 # ==============================================================================
 # 💿 SECTION: CORE MUSIC ENGINE
 # ==============================================================================
-
+# ==============================================================================
+# 🛠️ SECTION: HELPER FUNCTIONS
+# ==============================================================================
 
 
 
@@ -699,9 +687,7 @@ async def start_stream(interaction, url):
 
 
 
-# ==============================================================================
-# 🛠️ SECTION: HELPER FUNCTIONS
-# ==============================================================================
+
 
 async def play_music(interaction, url):
     q = get_queue(interaction.guild_id)
@@ -738,6 +724,82 @@ async def play_music(interaction, url):
         if vc.is_playing(): vc.stop()
         logger.info(f"▶️ START: {interaction.user.name} memulai sesi musik baru.")
         await start_stream(interaction, url)
+
+
+
+
+
+
+
+
+
+
+# ---	[ FUNGSI	---	STOP ]
+#
+async def fungsi_stop(interaction: discord.Interaction):
+    """Fungsi pusat untuk menghentikan bot dan membersihkan memori."""
+    q = get_queue(interaction.guild_id)
+    vc = interaction.guild.voice_client
+    
+    # Ambil data jumlah antrean sebelum dihapus
+    jumlah_antrean = len(q.queue)
+    
+    if vc:
+        # 1. Logika Pembersihan
+        q.queue.clear()
+        q.current_info = None
+        
+        # 2. Hapus Dashboard lama jika ada
+        if q.last_dashboard:
+            try:
+                await q.last_dashboard.delete()
+            except:
+                pass
+            q.last_dashboard = None
+
+        # 3. Putus Koneksi
+        await vc.disconnect()
+        logger.info(f"🛑 STOP SYSTEM: Dieksekusi oleh {interaction.user.name}")
+        
+        # 4. Buat Embed Estetik
+        embed = discord.Embed(
+            title="🛑 SYSTEM TERMINATED",
+            description=(
+                f"✨ **{interaction.user.mention}** telah menghentikan sesi musik.\n\n"
+                f"🧹 **Antrean:** `{jumlah_antrean}` lagu telah dibersihkan.\n"
+                f"📡 **Status:** Bot telah meninggalkan Voice Channel.\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            ),
+            color=0x2f3136
+        )
+        embed.set_thumbnail(url="https://i.ibb.co.com/KppFQ6N6/Logo1.gif")
+        
+        bot_avatar = bot.user.display_avatar.url if bot.user else None
+        embed.set_footer(text="Sesi berakhir • Angelss Project V17", icon_url=bot_avatar)
+
+        # 5. Kirim Respon
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed)
+        else:
+            await interaction.response.send_message(embed=embed, delete_after=20)
+    else:
+        if interaction.response.is_done():
+            await interaction.followup.send("❌ **Gagal:** Bot tidak aktif.", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ **Gagal:** Bot tidak aktif.", ephemeral=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -793,29 +855,9 @@ async def play(interaction: discord.Interaction, cari: str):
 
 @bot.tree.command(name="stop", description="Stop dan bersihkan")
 async def stop_cmd(interaction: discord.Interaction):
-    q = get_queue(interaction.guild_id)
-    vc = interaction.guild.voice_client
-    jumlah_antrean = len(q.queue)
+    # Langsung panggil fungsi pusat yang sama
+    await fungsi_stop(interaction)
     
-    logger.info(f"🛑 COMMAND: {interaction.user.name} uses /stop. ({jumlah_antrean} items cleared)")
-    
-    if vc:
-        q.queue.clear()
-        q.current_info = None
-        if q.last_dashboard:
-            try: await q.last_dashboard.delete()
-            except: pass
-            q.last_dashboard = None
-
-        await vc.disconnect()
-        
-        embed = discord.Embed(title="🛑 SYSTEM TERMINATED", description=(f"✨ **{interaction.user.mention}** menghentikan sesi.\n🧹 **Clear:** `{jumlah_antrean}` lagu."), color=0x2f3136)
-        embed.set_thumbnail(url="https://i.ibb.co.com/KppFQ6N6/Logo1.gif")
-        await interaction.response.send_message(embed=embed, delete_after=20)
-    else:
-        await interaction.response.send_message("❌ Bot tidak aktif.", ephemeral=True)
-
-
 
 
 
