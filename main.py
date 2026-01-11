@@ -418,6 +418,12 @@ class MusicQueue:
         self.last_search_msg = None
         self.last_queue_msg = None 
         self.text_channel_id = None
+      
+        # --- TAMBAHKAN 3 BARIS INI ---
+        self.update_task = None    # Untuk menyimpan proses update bar
+        self.start_time = 0        # Untuk mencatat detik mulai lagu
+        self.total_duration = 0    # Untuk mencatat total durasi lagu
+
 
     def clear_all(self):
         """Reset total data sesi (digunakan saat command /stop)."""
@@ -998,53 +1004,60 @@ current_update_task = None
 start_time_tracker = 0
 
 async def start_stream(interaction, url):
-    global current_update_task, start_time_tracker
-    
-    # ... (Bagian koneksi & extract info YTDL sama seperti sebelumnya) ...
-    # ... Anggap kode extract info sudah jalan dan variabel 'data' sudah ada ...
+    q = get_queue(interaction.guild_id)
+    vc = interaction.guild.voice_client
+    if not vc: return
 
-    # === [ LOGIKA BARU UNTUK DYNAMIC PLAYER ] ===
-    
-    # 1. Stop task update sebelumnya jika ada
-    if current_update_task and not current_update_task.done():
-        current_update_task.cancel()
+    # 1. Matikan update bar sebelumnya jika masih jalan
+    if q.update_task and not q.update_task.done():
+        q.update_task.cancel()
 
-    # 2. Setup Player
-    audio_source = discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTIONS)
-    source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
-
-    def after_playing(error):
-        # Matikan update task saat lagu selesai
-        if current_update_task: current_update_task.cancel()
+    try:
+        # 2. Ambil data lagu (Gunakan YTDL)
+        data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+        if 'entries' in data: data = data['entries'][0]
         
-        if error: logger.error(f"⚠️ Player Error: {error}")
-        bot.loop.create_task(next_logic(interaction))
+        stream_url = data.get('url')
+        
+        # 3. Setup Player
+        audio_source = discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTIONS)
+        source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
 
-    if vc.is_playing(): vc.stop()
-    vc.play(source, after=after_playing)
-    
-    # 3. Catat waktu mulai (PENTING untuk progress bar)
-    start_time_tracker = time.time()
-    total_duration = data.get('duration', 0)
-    thumbnail = data.get('thumbnail')
-    title = data.get('title')
-    web_url = data.get('webpage_url', url)
-    requester = interaction.user
+        def after_playing(error):
+            if q.update_task: q.update_task.cancel() # Matikan update bar saat lagu mati
+            if error: logger.error(f"⚠️ Player Error: {error}")
+            bot.loop.create_task(next_logic(interaction))
 
-    # 4. Hapus dashboard lama
-    if q.last_dashboard:
-        try: await q.last_dashboard.delete()
-        except: pass
+        if vc.is_playing(): vc.stop()
+        vc.play(source, after=after_playing)
+        
+        # 4. Simpan data untuk Timer Dashboard
+        q.start_time = time.time()
+        q.total_duration = data.get('duration', 0)
+        q.current_info = data # Simpan info lengkap
+        
+        thumbnail = data.get('thumbnail')
+        title = data.get('title')
+        web_url = data.get('webpage_url', url)
+        requester = interaction.user
 
-    # 5. Kirim Dashboard Awal
-    emb = generate_embed(0, total_duration, title, web_url, thumbnail, requester)
-    q.last_dashboard = await interaction.channel.send(embed=emb, view=MusicDashboard(interaction.guild_id))
+        # 5. Hapus dashboard lama agar chat bersih
+        if q.last_dashboard:
+            try: await q.last_dashboard.delete()
+            except: pass
 
-    # 6. Jalankan Loop Update (Update setiap 10 detik)
-    # Kita buat fungsi loop lokal di sini atau pakai tasks.loop terpisah
-    current_update_task = bot.loop.create_task(
-        update_player_interface(interaction, q.last_dashboard, total_duration, title, web_url, thumbnail, requester)
-    )
+        # 6. Kirim Dashboard Baru (Awal)
+        emb = generate_embed(0, q.total_duration, title, web_url, thumbnail, requester)
+        q.last_dashboard = await interaction.channel.send(embed=emb, view=MusicDashboard(interaction.guild_id))
+
+        # 7. JALANKAN MESIN UPDATE BAR (Looping setiap 10 detik)
+        q.update_task = bot.loop.create_task(
+            update_player_interface(interaction, q.last_dashboard, q.total_duration, title, web_url, thumbnail, requester)
+        )
+
+    except Exception as e:
+        logger.error(f"Gagal Start Stream: {e}")
+        await interaction.channel.send(f"⚠️ Terjadi kesalahan: {e}", delete_after=5)
 
 
 
@@ -1129,68 +1142,6 @@ async def play_music(interaction, url):
 
 
 
-
-
-# --- FUNGSI LOOP UPDATE (BACKGROUND TASK) ---
-async def update_player_interface(interaction, message, total_duration, title, url, thumb, req):
-    """Update embed setiap 10 detik agar bar bergerak"""
-    try:
-        while True:
-            await asyncio.sleep(10) # JANGAN KURANG DARI 5 DETIK (Bahaya Rate Limit)
-            
-            # Hitung durasi berjalan
-            current_time = time.time() - start_time_tracker
-            
-            # Cek jika lagu sudah selesai secara matematika
-            if total_duration and current_time > total_duration:
-                break
-                
-            # Update Embed
-            new_embed = generate_embed(current_time, total_duration, title, url, thumb, req)
-            try:
-                await message.edit(embed=new_embed)
-            except discord.NotFound:
-                break # Pesan dihapus user
-            except Exception as e:
-                print(f"Update error: {e}")
-                break
-    except asyncio.CancelledError:
-        pass # Task di-cancel (skip/stop), normal.
-
-# --- FUNGSI GENERATE EMBED ESTETIK ---
-def generate_embed(current, total, title, url, thumb, req):
-    # Format waktu (contoh: 01:25 / 04:00)
-    def fmt(sec):
-        return f"{int(sec//60):02}:{int(sec%60):02}"
-    
-    dur_str = f"{fmt(current)} / {fmt(total)}" if total else "🔴 LIVE STREAM"
-    
-    # Buat Progress Bar
-    prog_bar = create_progress_bar(current, total)
-    
-    embed = discord.Embed(color=0x2b2d31) # Warna Dark Discord (Clean)
-    
-    # Header minimalis
-    embed.set_author(name="Now Playing", icon_url="https://cdn.discordapp.com/emojis/1066063686851215391.gif") 
-    
-    # Judul & Link
-    embed.description = f"### [{title}]({url})\n"
-    
-    # Visual Bar
-    embed.description += f"```less\n{dur_str}\n{prog_bar}\n```"
-    
-    # Footer Info (Simpel & Rapi dengan Garis)
-    embed.add_field(name="👤 Requested by", value=req.mention, inline=True)
-    embed.add_field(name="🔊 Volume", value="100%", inline=True)
-    
-    # Thumbnail di pojok kanan (klasik media player)
-    if thumb: embed.set_thumbnail(url=thumb)
-    
-    # Footer statis
-    embed.set_footer(text="Music System • High Quality Audio", icon_url=req.display_avatar.url)
-    
-    return embed
-    
 
 
 
@@ -1696,6 +1647,77 @@ async def debug_system(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+async def update_player_interface(interaction, message, total_duration, title, url, thumb, req):
+    """Looping background untuk mengedit pesan setiap 10 detik"""
+    q = get_queue(interaction.guild_id)
+    try:
+        while True:
+            await asyncio.sleep(10) # 10 detik sekali (Aman dari banned Discord)
+            
+            # Hitung waktu berjalan (Sekarang - Waktu mulai)
+            current_time = time.time() - q.start_time
+            
+            # Berhenti jika lagu sudah lewat durasinya
+            if total_duration > 0 and current_time > total_duration:
+                break
+                
+            # Update tampilan dashboard
+            new_embed = generate_embed(current_time, total_duration, title, url, thumb, req)
+            try:
+                await message.edit(embed=new_embed)
+            except:
+                break # Berhenti jika pesan dashboard dihapus
+    except asyncio.CancelledError:
+        pass
+
+def generate_embed(current, total, title, url, thumb, req):
+    """Desain Dashboard Media Player"""
+    def fmt(sec): return f"{int(sec//60):02}:{int(sec%60):02}"
+    dur_str = f"{fmt(current)} / {fmt(total)}" if total else "🔴 LIVE"
+    prog_bar = create_progress_bar(current, total)
+    
+    # Warna Dark Discord yang elegan
+    embed = discord.Embed(color=0x2b2d31) 
+    embed.set_author(name="Now Playing", icon_url="https://cdn.discordapp.com/emojis/1066063686851215391.gif") 
+    
+    # Desain teks player
+    embed.description = f"### [{title}]({url})\n"
+    embed.description += f"```less\n{dur_str}\n{prog_bar}\n```"
+    
+    embed.add_field(name="👤 Requester", value=req.mention, inline=True)
+    embed.add_field(name="📡 Status", value="`Playing`", inline=True)
+    
+    if thumb: embed.set_thumbnail(url=thumb)
+    embed.set_footer(text="Angelss V17 • High Quality Audio", icon_url=req.display_avatar.url)
+    return embed
 
 # ==============================================================================
 # 🚀 SECTION: START ENGINE
