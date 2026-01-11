@@ -68,6 +68,11 @@ import yt_dlp
 
 
 
+#.--- Import Untuk Progress Bar 
+#
+import math
+import time
+
 
 
 
@@ -172,19 +177,8 @@ queues = {}
 
 
 
-import math
-import time
 
-def create_progress_bar(current_sec, total_sec, length=20):
-    """
-    Membuat bar dinamis: 02:00 [▬▬▬🔘▬▬▬▬▬▬▬▬] 04:00
-    """
-    if total_sec == 0: return "🔘▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬" # Live stream logic
-    
-    percent = current_sec / total_sec
-    filled_length = int(length * percent)
-    bar = "▬" * filled_length + "🔘" + "▬" * (length - filled_length - 1)
-    return bar
+
 
 
 
@@ -872,6 +866,12 @@ class MusicDashboard(discord.ui.View):
         await interaction.response.defer(ephemeral=False)
         q = get_queue(self.guild_id)
         vc = interaction.guild.voice_client
+                
+        # --- TAMBAHKAN INI AGAR BAR BERHENTI ---
+        if q.update_task:
+            q.update_task.cancel()
+        # ---------------------------------------
+
         
         if not vc or not (vc.is_playing() or vc.is_paused()):
             return await interaction.followup.send("❌ **Informasi:** Tidak ada lagu untuk di-skip.", ephemeral=True)
@@ -911,7 +911,11 @@ class MusicDashboard(discord.ui.View):
     async def st(self, interaction: discord.Interaction, button: discord.ui.Button):
         q = get_queue(interaction.guild_id)
         vc = interaction.guild.voice_client
-        jumlah_antrean = len(q.queue)
+        
+        # --- TAMBAHKAN INI ---
+        if q.update_task:
+            q.update_task.cancel()
+        # ----------------------
         
         q.queue.clear()
         if vc:
@@ -1221,7 +1225,12 @@ async def play(interaction: discord.Interaction, cari: str):
 async def stop_cmd(interaction: discord.Interaction):
     q = get_queue(interaction.guild_id)
     vc = interaction.guild.voice_client
-    
+
+    # --- TAMBAHKAN INI AGAR BAR BERHENTI ---
+    if q.update_task:
+        q.update_task.cancel()
+    # ---------------------------------------
+
     # Ambil data jumlah antrean sebelum dihapus untuk laporan
     jumlah_antrean = len(q.queue)
     
@@ -1325,6 +1334,13 @@ async def skip_cmd(interaction: discord.Interaction):
     q = get_queue(interaction.guild_id)
     vc = interaction.guild.voice_client
     
+            
+        
+    # --- TAMBAHKAN INI AGAR BAR BERHENTI ---
+    if q.update_task:
+        q.update_task.cancel()
+    # ---------------------------------------
+
     if vc and (vc.is_playing() or vc.is_paused()):
         # 2. Logika Pengambilan Judul 
         lagu_dilewati = "Lagu saat ini"
@@ -1673,6 +1689,16 @@ async def debug_system(interaction: discord.Interaction):
 
 
 
+def create_progress_bar(current, total):
+    if total == 0:
+        return "─" * 28 # Garis panjang jika lagu live
+        
+    size = 28 # <--- GANTI ANGKA INI (28-30 biasanya pas untuk lebar kotak 'less' di HP)
+    progress = int((current / total) * size)
+    
+    # Tetap pakai simbol pilihanmu
+    bar = "▬" * progress + "🔘" + "▬" * (size - progress)
+    return bar
 
 
 async def update_player_interface(interaction, message, total_duration, title, url, thumb, req):
@@ -1699,16 +1725,17 @@ async def update_player_interface(interaction, message, total_duration, title, u
         pass
 
 def generate_embed(current, total, title, url, thumb, req):
-    """Desain Dashboard Media Player"""
+    """Desain Dashboard Media Player Asli Kamu"""
     def fmt(sec): return f"{int(sec//60):02}:{int(sec%60):02}"
     dur_str = f"{fmt(current)} / {fmt(total)}" if total else "🔴 LIVE"
+    
+    # Memanggil fungsi bar yang sudah kita perlebar sizenya di atas
     prog_bar = create_progress_bar(current, total)
     
-    # Warna Dark Discord yang elegan
     embed = discord.Embed(color=0x2b2d31) 
     embed.set_author(name="Now Playing", icon_url="https://cdn.discordapp.com/emojis/1066063686851215391.gif") 
     
-    # Desain teks player
+    # Bagian ini tetap mempertahankan gaya asli kamu
     embed.description = f"### [{title}]({url})\n"
     embed.description += f"```less\n{dur_str}\n{prog_bar}\n```"
     
@@ -1718,6 +1745,7 @@ def generate_embed(current, total, title, url, thumb, req):
     if thumb: embed.set_thumbnail(url=thumb)
     embed.set_footer(text="Angelss V17 • High Quality Audio", icon_url=req.display_avatar.url)
     return embed
+
 
 # ==============================================================================
 # 🚀 SECTION: START ENGINE
