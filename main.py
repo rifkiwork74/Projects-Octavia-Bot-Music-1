@@ -1736,7 +1736,7 @@ def generate_embed(current, total, title, url, thumb, req):
     prog_bar = create_progress_bar(current, total)
     
     embed = discord.Embed(color=0x2b2d31) 
-    embed.set_author(name="Now Playing", icon_url="https://cdn.discordapp.com/emojis/1066063686851215391.gif") 
+    embed.set_author(name="Now Playing", icon_url="https://cdn3.emoji.gg/emojis/3915-do-not-disturb.gif") 
     
     # Bagian ini tetap mempertahankan gaya asli kamu
     embed.description = f"### [{title}]({url})\n"
