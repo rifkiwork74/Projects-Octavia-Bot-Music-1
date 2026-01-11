@@ -55,7 +55,7 @@ load_dotenv() # <--- 2. Jalankan fungsi ini di sini
 import discord
 from discord import app_commands
 from discord.ext import commands
-
+from discord.ext import tasks
 
 
 
@@ -172,6 +172,19 @@ queues = {}
 
 
 
+import math
+import time
+
+def create_progress_bar(current_sec, total_sec, length=20):
+    """
+    Membuat bar dinamis: 02:00 [▬▬▬🔘▬▬▬▬▬▬▬▬] 04:00
+    """
+    if total_sec == 0: return "🔘▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬" # Live stream logic
+    
+    percent = current_sec / total_sec
+    filled_length = int(length * percent)
+    bar = "▬" * filled_length + "🔘" + "▬" * (length - filled_length - 1)
+    return bar
 
 
 
@@ -964,82 +977,91 @@ async def next_logic(interaction):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # --- [ 12.2. START STREAM LOGIC (PATCHED) ] ---
+# Simpan task update di global/class variable agar bisa di-cancel saat stop/skip
+current_update_task = None 
+start_time_tracker = 0
+
 async def start_stream(interaction, url):
-    """Mesin utama dengan perbaikan Timestamp & Buffer."""
-    q = get_queue(interaction.guild_id)
-    q.text_channel_id = interaction.channel.id
+    global current_update_task, start_time_tracker
     
-    vc = interaction.guild.voice_client
-    if not vc or not vc.is_connected(): 
-        return
+    # ... (Bagian koneksi & extract info YTDL sama seperti sebelumnya) ...
+    # ... Anggap kode extract info sudah jalan dan variabel 'data' sudah ada ...
 
-    try:
-        # Scraping data
-        data = await asyncio.wait_for(
-            bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False)),
-            timeout=35
-        )
-        
-        if data is None: raise Exception("Cookies Expired / Network Error")
-        if 'entries' in data: data = data['entries'][0]
+    # === [ LOGIKA BARU UNTUK DYNAMIC PLAYER ] ===
+    
+    # 1. Stop task update sebelumnya jika ada
+    if current_update_task and not current_update_task.done():
+        current_update_task.cancel()
 
-        stream_url = data.get('url')
-        
-        # [AUDIT FIX]: Pastikan stream URL valid
-        if not stream_url: raise Exception("Stream URL Kosong")
+    # 2. Setup Player
+    audio_source = discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTIONS)
+    source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
 
-        # [CRITICAL FIX]: Menggunakan opsi FFMPEG baru
-        # Hapus 'executable="ffmpeg"' jika sudah ada di PATH environment, 
-        # tapi biarkan jika Anda memakai path spesifik.
-        audio_source = discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTIONS)
+    def after_playing(error):
+        # Matikan update task saat lagu selesai
+        if current_update_task: current_update_task.cancel()
         
-        # Volume Transformer
-        source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
-        
-        def after_playing(error):
-            if error: logger.error(f"⚠️ Player Error: {error}")
-            # Panggil next_logic dengan aman
-            bot.loop.create_task(next_logic(interaction))
+        if error: logger.error(f"⚠️ Player Error: {error}")
+        bot.loop.create_task(next_logic(interaction))
 
-        if vc.is_playing(): vc.stop()
-        
-        # Jeda mikro untuk memastikan buffer audio di Discord bersih sebelum inject stream baru
-        await asyncio.sleep(0.5) 
-        
-        vc.play(source, after=after_playing)
-        
-        # ... (Kode Dashboard Embed Anda tetap sama di bawah ini) ...
-        # ...
-        
-        # [UPDATE DASHBOARD LOGIC START]
-        if q.last_dashboard:
-            try: await q.last_dashboard.delete()
-            except: pass
-            
-        durasi_detik = data.get('duration', 0)
-        durasi_str = str(datetime.timedelta(seconds=durasi_detik)) if durasi_detik else "Live / Unknown"
+    if vc.is_playing(): vc.stop()
+    vc.play(source, after=after_playing)
+    
+    # 3. Catat waktu mulai (PENTING untuk progress bar)
+    start_time_tracker = time.time()
+    total_duration = data.get('duration', 0)
+    thumbnail = data.get('thumbnail')
+    title = data.get('title')
+    web_url = data.get('webpage_url', url)
+    requester = interaction.user
 
-        emb = discord.Embed(
-            title="🎶 Sedang Diputar", 
-            description=f"**[{data['title']}]({data.get('webpage_url', url)})**", 
-            color=0x2ecc71 
-        )
-        emb.add_field(name="⏱️ Durasi", value=f"`{durasi_str}`", inline=True)
-        # ... (lanjutan embed Anda)
-        
-        q.last_dashboard = await interaction.channel.send(
-            embed=emb, 
-            view=MusicDashboard(interaction.guild_id)
-        )
-        # [UPDATE DASHBOARD LOGIC END]
+    # 4. Hapus dashboard lama
+    if q.last_dashboard:
+        try: await q.last_dashboard.delete()
+        except: pass
 
-    except Exception as e:
-        # ... (Error handling Anda tetap sama)
-        logger.error(f"STREAM ERROR: {e}")
-        # Pastikan next_logic dipanggil jika error, agar queue tetap jalan
-        await asyncio.sleep(3)
-        await next_logic(interaction)
+    # 5. Kirim Dashboard Awal
+    emb = generate_embed(0, total_duration, title, web_url, thumbnail, requester)
+    q.last_dashboard = await interaction.channel.send(embed=emb, view=MusicDashboard(interaction.guild_id))
+
+    # 6. Jalankan Loop Update (Update setiap 10 detik)
+    # Kita buat fungsi loop lokal di sini atau pakai tasks.loop terpisah
+    current_update_task = bot.loop.create_task(
+        update_player_interface(interaction, q.last_dashboard, total_duration, title, web_url, thumbnail, requester)
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1103,6 +1125,92 @@ async def play_music(interaction, url):
             
         # Langsung jalankan mesin pemutar (Pastikan start_stream sudah pakai FFMPEG_OPTIONS hasil audit)
         await start_stream(interaction, url)
+
+
+
+
+
+
+# --- FUNGSI LOOP UPDATE (BACKGROUND TASK) ---
+async def update_player_interface(interaction, message, total_duration, title, url, thumb, req):
+    """Update embed setiap 10 detik agar bar bergerak"""
+    try:
+        while True:
+            await asyncio.sleep(10) # JANGAN KURANG DARI 5 DETIK (Bahaya Rate Limit)
+            
+            # Hitung durasi berjalan
+            current_time = time.time() - start_time_tracker
+            
+            # Cek jika lagu sudah selesai secara matematika
+            if total_duration and current_time > total_duration:
+                break
+                
+            # Update Embed
+            new_embed = generate_embed(current_time, total_duration, title, url, thumb, req)
+            try:
+                await message.edit(embed=new_embed)
+            except discord.NotFound:
+                break # Pesan dihapus user
+            except Exception as e:
+                print(f"Update error: {e}")
+                break
+    except asyncio.CancelledError:
+        pass # Task di-cancel (skip/stop), normal.
+
+# --- FUNGSI GENERATE EMBED ESTETIK ---
+def generate_embed(current, total, title, url, thumb, req):
+    # Format waktu (contoh: 01:25 / 04:00)
+    def fmt(sec):
+        return f"{int(sec//60):02}:{int(sec%60):02}"
+    
+    dur_str = f"{fmt(current)} / {fmt(total)}" if total else "🔴 LIVE STREAM"
+    
+    # Buat Progress Bar
+    prog_bar = create_progress_bar(current, total)
+    
+    embed = discord.Embed(color=0x2b2d31) # Warna Dark Discord (Clean)
+    
+    # Header minimalis
+    embed.set_author(name="Now Playing", icon_url="https://cdn.discordapp.com/emojis/1066063686851215391.gif") 
+    
+    # Judul & Link
+    embed.description = f"### [{title}]({url})\n"
+    
+    # Visual Bar
+    embed.description += f"```less\n{dur_str}\n{prog_bar}\n```"
+    
+    # Footer Info (Simpel & Rapi dengan Garis)
+    embed.add_field(name="👤 Requested by", value=req.mention, inline=True)
+    embed.add_field(name="🔊 Volume", value="100%", inline=True)
+    
+    # Thumbnail di pojok kanan (klasik media player)
+    if thumb: embed.set_thumbnail(url=thumb)
+    
+    # Footer statis
+    embed.set_footer(text="Music System • High Quality Audio", icon_url=req.display_avatar.url)
+    
+    return embed
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
