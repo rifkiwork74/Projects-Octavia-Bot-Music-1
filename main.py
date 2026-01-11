@@ -1048,19 +1048,27 @@ async def start_stream(interaction, url):
             try: await q.last_dashboard.delete()
             except: pass
 
+        # (Lanjutan Bagian 5 ke bawah pada fungsi start_stream kamu)
+
+        # 5. Hapus dashboard lama agar chat bersih
+        if q.last_dashboard:
+            try: await q.last_dashboard.delete()
+            except: pass
+
         # 6. Kirim Dashboard Baru (Awal)
-        emb = generate_embed(0, q.total_duration, title, web_url, thumbnail, requester)
+        # --- TAMBAHKAN interaction.guild_id DI AKHIR ---
+        emb = generate_embed(0, q.total_duration, title, web_url, thumbnail, requester, interaction.guild_id)
         q.last_dashboard = await interaction.channel.send(embed=emb, view=MusicDashboard(interaction.guild_id))
 
-        # 7. JALANKAN MESIN UPDATE BAR (Looping setiap 10 detik)
+        # 7. JALANKAN MESIN UPDATE BAR
+        # --- TAMBAHKAN interaction.guild_id DI AKHIR ---
         q.update_task = bot.loop.create_task(
-            update_player_interface(interaction, q.last_dashboard, q.total_duration, title, web_url, thumbnail, requester)
+            update_player_interface(interaction, q.last_dashboard, q.total_duration, title, web_url, thumbnail, requester, interaction.guild_id)
         )
 
     except Exception as e:
         logger.error(f"Gagal Start Stream: {e}")
         await interaction.channel.send(f"⚠️ Terjadi kesalahan: {e}", delete_after=5)
-
 
 
 
@@ -1718,53 +1726,90 @@ def create_progress_bar(current, total):
 
 
 
-def generate_embed(current, total, title, url, thumb, req):
-    """Desain Dashboard Media Player Asli Kamu"""
-    def fmt(sec): return f"{int(sec//60):02}:{int(sec%60):02}"
-    dur_str = f"{fmt(current)} / {fmt(total)}" if total else "🔴 LIVE"
+
+def generate_embed(current, total, title, url, thumb, req, guild_id):
+    """Desain Dashboard Media Player Premium Style"""
+    # Ambil data volume untuk sinkronisasi dinamis
+    q = get_queue(guild_id)
+    vol_percent = int(q.volume * 100)
     
-    # Memanggil fungsi bar yang sudah kita perlebar sizenya di atas
+    # Formatter Waktu
+    def fmt(sec): return f"{int(sec//60):02}:{int(sec%60):02}"
+    dur_str = f"**{fmt(current)}** / **{fmt(total)}**" if total else "🔴 **LIVE STREAM**"
+    
+    # Progress Bar
     prog_bar = create_progress_bar(current, total)
     
+    # Warna Dark Spotify (0x1DB954) atau Dark Discord (0x2b2d31)
     embed = discord.Embed(color=0x2b2d31) 
-    embed.set_author(name="Now Playing", icon_url="https://cdn3.emoji.gg/emojis/3915-do-not-disturb.gif") 
     
-    # Bagian ini tetap mempertahankan gaya asli kamu
-    embed.description = f"### [{title}]({url})\n"
-    embed.description += f"```less\n{dur_str}\n{prog_bar}\n```"
+    # Header: Animasi Sinyal / Playing
+    embed.set_author(
+        name="SEDANG DIPUTAR", 
+        icon_url="https://cdn.pixabay.com/animation/2023/06/13/15/12/15-12-37-624_512.gif"
+    )
     
-    embed.add_field(name="👤 Requester", value=req.mention, inline=True)
-    embed.add_field(name="📡 Status", value="`Playing`", inline=True)
+    # Konten Utama: Judul Besar & Bar (Spotify Style)
+    embed.description = (
+        f"## 🎵 [{title}]({url})\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{prog_bar}\n"
+        f"{dur_str}\n"
+    )
     
+    # Informasi Detail (SINKRON)
+    # Field Volume akan otomatis berubah setiap kali tombol volume ditekan
+    vol_emoji = "🔇" if vol_percent == 0 else "🔈" if vol_percent < 40 else "🔉" if vol_percent < 70 else "🔊"
+    
+    embed.add_field(name="👤 Pemesan", value=req.mention, inline=True)
+    embed.add_field(name=f"{vol_emoji} Volume", value=f"`{vol_percent}%`", inline=True)
+    embed.add_field(name="📡 Audio Source", value="`Lossless 192kbps`", inline=True)
+    
+    # Thumbnail Lagu (Besar di samping)
     if thumb: embed.set_thumbnail(url=thumb)
-    embed.set_footer(text="Angelss V17 • High Quality Audio", icon_url=req.display_avatar.url)
+    
+    # Footer Elegan
+    embed.set_footer(
+        text=f"Angelss V17 Premium • {req.display_name}", 
+        icon_url=req.display_avatar.url
+    )
     return embed
 
 
 
-async def update_player_interface(interaction, message, total_duration, title, url, thumb, req):
-    """Looping background yang sudah diperbaiki agar tidak melompat"""
-    q = get_queue(interaction.guild_id)
+
+
+
+
+# Tambahkan 'guild_id' di dalam kurung paling akhir
+async def update_player_interface(interaction, message, total_duration, title, url, thumb, req, guild_id):
+    """Looping background dengan interval 5 detik (Struktur Asli Kamu + Sinkron ID)"""
+    # Ambil antrean berdasarkan guild_id yang dikirim
+    q = get_queue(guild_id) 
     try:
         while True:
-            # Hitung waktu real-time
+            # 1. Hitung waktu berjalan secara real-time
             current_time = time.time() - q.start_time
             
+            # 2. Berhenti jika lagu sudah mencapai akhir durasi
             if total_duration > 0 and current_time > total_duration:
                 break
                 
-            # Update tampilan embed
-            new_embed = generate_embed(current_time, total_duration, title, url, thumb, req)
+            # 3. Buat tampilan embed terbaru (Sekarang mengoper guild_id ke generate_embed)
+            new_embed = generate_embed(current_time, total_duration, title, url, thumb, req, guild_id)
             
             try:
+                # 4. Kirim update ke Discord
                 await message.edit(embed=new_embed)
             except (discord.NotFound, Exception):
+                # Berhenti jika pesan dashboard dihapus atau ada error jaringan
                 break 
 
-            # --- FIX 3: Pindahkan sleep ke bawah agar detik awal (0,1,2..) sempat terproses ---
-            await asyncio.sleep(10) 
+            # --- JEDA 5 DETIK ---
+            await asyncio.sleep(5) 
             
     except asyncio.CancelledError:
+        # Berhenti jika lagu di-skip atau tombol Stop ditekan
         pass
 
 
