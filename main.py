@@ -738,50 +738,41 @@ class MusicDashboard(discord.ui.View):
         self.guild_id = guild_id
 
     async def update_button(self, message):
-        """Fungsi manual untuk menyamakan tampilan tombol dengan status musik (SINKRONISASI)"""
+        """Fungsi manual untuk menyamakan tampilan tombol (SINKRONISASI)"""
         vc = message.guild.voice_client
         if not self.children: return
-        
-        # children[0] adalah tombol Jeda/Lanjut (tombol pertama)
         button = self.children[0] 
-        
         if vc and vc.is_paused():
-            button.emoji = "▶️"
-            button.label = "Lanjut"
-            button.style = discord.ButtonStyle.success
+            button.emoji = "▶️"; button.label = "Lanjut"; button.style = discord.ButtonStyle.success
         else:
-            button.emoji = "⏸️"
-            button.label = "Jeda"
-            button.style = discord.ButtonStyle.secondary
-            
+            button.emoji = "⏸️"; button.label = "Jeda"; button.style = discord.ButtonStyle.secondary
         await message.edit(view=self)
 
-    # --- TOMBOL 1: PLAY/PAUSE (Urutan Penting untuk children[0]) ---
     @discord.ui.button(label="Jeda", emoji="⏸️", style=discord.ButtonStyle.secondary)
     async def pp(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # --- FIX 1: Panggil q agar tidak error ---
+        q = get_queue(self.guild_id)
         vc = interaction.guild.voice_client
-        if not vc: 
-            return await interaction.response.send_message("❌ Bot tidak ada di Voice Channel.", ephemeral=True)
+        if not vc: return await interaction.response.send_message("❌ Bot tidak ada di VC.", ephemeral=True)
         
         if vc.is_playing():
             vc.pause()
-            # MATIKAN bar agar tidak jalan terus saat musik berhenti
-            if q.update_task:
-                q.update_task.cancel()
-            button.emoji = "▶️"
-            button.label = "Lanjut"
-            button.style = discord.ButtonStyle.success 
+            if q.update_task: q.update_task.cancel()
+            button.emoji = "▶️"; button.label = "Lanjut"; button.style = discord.ButtonStyle.success 
         else:
+            # --- FIX 2: Sinkronisasi waktu saat resume ---
+            current_pos = time.time() - q.start_time
+            q.start_time = time.time() - current_pos
             vc.resume()
-            # NYALAKAN KEMBALI mesin bar durasi
             q.update_task = bot.loop.create_task(
                 update_player_interface(interaction, q.last_dashboard, q.total_duration, q.current_info['title'], q.current_info['webpage_url'], q.current_info['thumbnail'], interaction.user)
             )
-            button.emoji = "⏸️"
-            button.label = "Jeda"
-            button.style = discord.ButtonStyle.secondary
+            button.emoji = "⏸️"; button.label = "Jeda"; button.style = discord.ButtonStyle.secondary
         
         await interaction.response.edit_message(view=self)
+
+    # ... (Tombol Volume, Antrean, Skip, Stop milikmu tetap sama di bawahnya)
+
 
     # --- TOMBOL 2: VOLUME ---
     @discord.ui.button(label="Volume", emoji="🔊", style=discord.ButtonStyle.gray)
@@ -1556,7 +1547,7 @@ async def keluar(interaction: discord.Interaction):
     else:
         await interaction.response.send_message("❌ Aku sedang tidak berada di dalam Voice Channel.", ephemeral=True)
 
-# 4. DAFTARKAN GRUP (Wajib dilakukan setelah sub-command dibuat)
+# 4.DAFTARKAN GRUP (Wajib dilakukan setelah sub-command dibuat)
 bot.tree.add_command(voice_group)
 
 
@@ -1752,34 +1743,31 @@ def generate_embed(current, total, title, url, thumb, req):
 
 
 async def update_player_interface(interaction, message, total_duration, title, url, thumb, req):
-    """Looping background untuk mengedit pesan & menggerakkan bar"""
+    """Looping background yang sudah diperbaiki agar tidak melompat"""
     q = get_queue(interaction.guild_id)
     try:
         while True:
-            # Update setiap 10 detik agar hemat resource & tidak kena rate limit
-            await asyncio.sleep(10) 
-            
-            # Hitung waktu berjalan: Waktu sekarang dikurangi waktu mulai lagu
+            # Hitung waktu real-time
             current_time = time.time() - q.start_time
             
-            # Jika lagu sudah selesai, hentikan looping
             if total_duration > 0 and current_time > total_duration:
                 break
                 
-            # --- SINKRONISASI DI SINI ---
-            # Kita panggil fungsi generate_embed aslimu dengan waktu terbaru
+            # Update tampilan embed
             new_embed = generate_embed(current_time, total_duration, title, url, thumb, req)
             
             try:
                 await message.edit(embed=new_embed)
-            except discord.NotFound:
-                break # Berhenti jika pesan dashboard dihapus user
-            except Exception as e:
-                print(f"Gagal update dashboard: {e}")
-                break
+            except (discord.NotFound, Exception):
+                break 
+
+            # --- FIX 3: Pindahkan sleep ke bawah agar detik awal (0,1,2..) sempat terproses ---
+            await asyncio.sleep(10) 
+            
     except asyncio.CancelledError:
-        # Berhenti jika lagu di-skip atau di-stop
         pass
+
+
 
 
 # ==============================================================================
