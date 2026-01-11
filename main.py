@@ -765,11 +765,18 @@ class MusicDashboard(discord.ui.View):
         
         if vc.is_playing():
             vc.pause()
+            # MATIKAN bar agar tidak jalan terus saat musik berhenti
+            if q.update_task:
+                q.update_task.cancel()
             button.emoji = "▶️"
             button.label = "Lanjut"
             button.style = discord.ButtonStyle.success 
         else:
             vc.resume()
+            # NYALAKAN KEMBALI mesin bar durasi
+            q.update_task = bot.loop.create_task(
+                update_player_interface(interaction, q.last_dashboard, q.total_duration, q.current_info['title'], q.current_info['webpage_url'], q.current_info['thumbnail'], interaction.user)
+            )
             button.emoji = "⏸️"
             button.label = "Jeda"
             button.style = discord.ButtonStyle.secondary
@@ -1288,6 +1295,7 @@ async def pause(interaction: discord.Interaction):
     
     if vc and vc.is_playing():
         vc.pause()
+        if q.update_task: q.update_task.cancel() # STOP bar di sini
         embed = discord.Embed(description="⏸️ **Musik telah dijeda.**", color=0xf1c40f)
         await interaction.response.send_message(embed=embed, delete_after=10)
         
@@ -1307,7 +1315,17 @@ async def resume(interaction: discord.Interaction):
     
     # Validasi: Apakah bot memang sedang dalam kondisi Pause?
     if vc and vc.is_paused():
+        # HITUNG ULANG start_time agar bar sinkron lagi
+            # (Waktu mulai baru = Waktu sekarang - posisi detik terakhir)
+        current_pos = time.time() - q.start_time
+        q.start_time = time.time() - current_pos
+
         vc.resume()
+        
+        # Jalankan ulang mesin bar
+        q.update_task = bot.loop.create_task(
+            update_player_interface(interaction, q.last_dashboard, q.total_duration, q.current_info['title'], q.current_info['webpage_url'], q.current_info['thumbnail'], interaction.user)
+        )
         
         embed = discord.Embed(description="▶️ **Musik dilanjutkan kembali.**", color=0x2ecc71)
         await interaction.response.send_message(embed=embed, delete_after=10)
@@ -1690,39 +1708,24 @@ async def debug_system(interaction: discord.Interaction):
 
 
 def create_progress_bar(current, total):
-    if total == 0:
-        return "─" * 28 # Garis panjang jika lagu live
+    if total <= 0:
+        return "🔴 " + "─" * 30 # Garis panjang untuk Live
         
-    size = 28 # <--- GANTI ANGKA INI (28-30 biasanya pas untuk lebar kotak 'less' di HP)
-    progress = int((current / total) * size)
+    # --- SESUAIKAN ANGKA INI ---
+    max_size = 33 # Naikkan ke 33 agar full mentok di embed HP
     
-    # Tetap pakai simbol pilihanmu
-    bar = "▬" * progress + "🔘" + "▬" * (size - progress)
+    # Logika Dinamis: 
+    # Lagu pendek (1-3 mnt) bar akan terlihat lebih ringkas.
+    # Lagu panjang (>10 mnt) bar akan memanjang sampai max_size.
+    dynamic_size = max(20, min(int(total / 30), max_size)) 
+    
+    progress = int((current / total) * dynamic_size)
+    
+    # Gabungan simbol: ▬ untuk yang sudah lewat, 🔘 posisi skrg, ─ garis sisa
+    bar = "▬" * progress + "🔘" + "─" * (dynamic_size - progress)
     return bar
 
 
-async def update_player_interface(interaction, message, total_duration, title, url, thumb, req):
-    """Looping background untuk mengedit pesan setiap 10 detik"""
-    q = get_queue(interaction.guild_id)
-    try:
-        while True:
-            await asyncio.sleep(10) # 10 detik sekali (Aman dari banned Discord)
-            
-            # Hitung waktu berjalan (Sekarang - Waktu mulai)
-            current_time = time.time() - q.start_time
-            
-            # Berhenti jika lagu sudah lewat durasinya
-            if total_duration > 0 and current_time > total_duration:
-                break
-                
-            # Update tampilan dashboard
-            new_embed = generate_embed(current_time, total_duration, title, url, thumb, req)
-            try:
-                await message.edit(embed=new_embed)
-            except:
-                break # Berhenti jika pesan dashboard dihapus
-    except asyncio.CancelledError:
-        pass
 
 def generate_embed(current, total, title, url, thumb, req):
     """Desain Dashboard Media Player Asli Kamu"""
@@ -1745,6 +1748,38 @@ def generate_embed(current, total, title, url, thumb, req):
     if thumb: embed.set_thumbnail(url=thumb)
     embed.set_footer(text="Angelss V17 • High Quality Audio", icon_url=req.display_avatar.url)
     return embed
+
+
+
+async def update_player_interface(interaction, message, total_duration, title, url, thumb, req):
+    """Looping background untuk mengedit pesan & menggerakkan bar"""
+    q = get_queue(interaction.guild_id)
+    try:
+        while True:
+            # Update setiap 10 detik agar hemat resource & tidak kena rate limit
+            await asyncio.sleep(10) 
+            
+            # Hitung waktu berjalan: Waktu sekarang dikurangi waktu mulai lagu
+            current_time = time.time() - q.start_time
+            
+            # Jika lagu sudah selesai, hentikan looping
+            if total_duration > 0 and current_time > total_duration:
+                break
+                
+            # --- SINKRONISASI DI SINI ---
+            # Kita panggil fungsi generate_embed aslimu dengan waktu terbaru
+            new_embed = generate_embed(current_time, total_duration, title, url, thumb, req)
+            
+            try:
+                await message.edit(embed=new_embed)
+            except discord.NotFound:
+                break # Berhenti jika pesan dashboard dihapus user
+            except Exception as e:
+                print(f"Gagal update dashboard: {e}")
+                break
+    except asyncio.CancelledError:
+        # Berhenti jika lagu di-skip atau di-stop
+        pass
 
 
 # ==============================================================================
