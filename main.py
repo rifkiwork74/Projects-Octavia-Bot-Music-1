@@ -844,16 +844,21 @@ class MusicDashboard(discord.ui.View):
 	
 	
 	# --- TOMBOL 1: -10 ---
-	#
     @discord.ui.button(label="-10s", emoji="⏪", style=discord.ButtonStyle.secondary)
     async def backward(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
         q = get_queue(self.guild_id)
         current_pos = time.time() - q.start_time
         new_pos = max(0, current_pos - 10)
-        await start_stream(interaction, q.current_info['webpage_url'], seek_time=new_pos)
-
-
+        
+        # Beri respon ke Discord agar tidak "Interaction Failed"
+        await interaction.response.defer()
+        
+        # Panggil fungsi khusus seek agar tidak menghapus dashboard
+        await self.execute_seek(interaction, new_pos)
+        
+        
+        
+        
 	# --- TOMBOL 2: JEDA / LANJUT ---
     #
     @discord.ui.button(label="Jeda", emoji="⏸️", style=discord.ButtonStyle.secondary)
@@ -903,15 +908,58 @@ class MusicDashboard(discord.ui.View):
 	
 	
 	# --- TOMBOL 3: +10 ---
-    #
     @discord.ui.button(label="+10s", emoji="⏩", style=discord.ButtonStyle.secondary)
     async def forward(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
         q = get_queue(self.guild_id)
         current_pos = time.time() - q.start_time
         new_pos = min(q.total_duration, current_pos + 10)
-        await start_stream(interaction, q.current_info['webpage_url'], seek_time=new_pos)
+        
+        await interaction.response.defer()
+        await self.execute_seek(interaction, new_pos)
 
+    # Tambahkan Fungsi Pembantu di dalam Class MusicDashboard ini:
+    async def execute_seek(self, interaction, new_pos):
+        q = get_queue(self.guild_id)
+        vc = interaction.guild.voice_client
+        
+        if vc and (vc.is_playing() or vc.is_paused()):
+            # Hentikan sementara update loop agar tidak tabrakan
+            if q.update_task:
+                q.update_task.cancel()
+            
+            # Restart stream di posisi baru tanpa memicu 'next_logic'
+            # Kita gunakan flag manual agar after_playing tidak lari ke lagu selanjutnya
+            q.is_seeking = True 
+            
+            # Ambil data stream yang sedang jalan
+            data = q.current_info
+            ffmpeg_before = FFMPEG_OPTIONS['before_options'] + f" -ss {new_pos}"
+            
+            audio_source = discord.FFmpegPCMAudio(data['url'], before_options=ffmpeg_before, options=FFMPEG_OPTIONS['options'])
+            source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
+            
+            vc.stop() # Ini akan memicu after_playing lama
+            vc.play(source, after=lambda e: self.after_seek(e, self.guild_id))
+            
+            # Update waktu start bot
+            q.start_time = time.time() - new_pos
+            q.is_seeking = False
+            
+            # Jalankan kembali progress bar
+            q.update_task = interaction.client.loop.create_task(
+                update_player_interface(
+                    q.last_dashboard, q.total_duration, 
+                    data['title'], data['webpage_url'], 
+                    data['thumbnail'], interaction.user, self.guild_id
+                )
+            )
+
+    def after_seek(self, error, g_id):
+        q = get_queue(g_id)
+        if error: logger.error(f"Seek Error: {error}")
+        # Jika bukan sedang seeking (berarti lagu beneran habis), baru lanjut ke lagu selanjutnya
+        if not getattr(q, 'is_seeking', False):
+            bot.loop.create_task(next_logic(g_id))
 
 	# --- TOMBOL 4: SKIP ---
     #
