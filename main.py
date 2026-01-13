@@ -278,8 +278,11 @@ def get_queue(guild_id):
 
 def delete_queue(guild_id):
     if guild_id in queues:
+        # Hapus task jika masih jalan sebelum menghapus data
+        if queues[guild_id].update_task:
+            queues[guild_id].update_task.cancel()
         del queues[guild_id]
- 
+
  
  
  
@@ -297,6 +300,28 @@ def delete_queue(guild_id):
 # ==============================================================================
 
 
+#
+# ⚙️ 4.0.  :	Fungsi ini agar bagus 
+# ------------------------------------------------------------------------------
+#
+#
+def buat_embed_status(emoji, pesan, warna):
+    """Pesan notifikasi simpel satu baris"""
+    return discord.Embed(description=f"{emoji} **{pesan}**", color=warna)
+
+def format_time(sec):
+    """Mengubah detik menjadi format 00:00 atau 00:00:00"""
+    sec = int(sec)
+    hrs = sec // 3600
+    mins = (sec % 3600) // 60
+    secs = sec % 60
+    if hrs > 0:
+        return f"{hrs:02}:{mins:02}:{secs:02}"
+    else:
+        return f"{mins:02}:{secs:02}"
+        
+        
+    
 #
 # 🎨 4.1 :	Function Embed Skip
 # ------------------------------------------------------------------------------
@@ -344,129 +369,105 @@ def bootstrap():
 
 
 
+
 #
-# 🔘▬ 4.3.  :	Funstion def program progress bar dynamic 
+# 🔘▬ 4.3.  :	Function Progress Bar (REFINED PRECISION)
 # ------------------------------------------------------------------------------
 #
 #
 def create_progress_bar(current, total):
     if total <= 0:
-        return "🔴 " + "─" * 30 # Garis panjang untuk Live
+        return "🔴 " + "─" * 22 + " [LIVE]"
         
-    # --- SESUAIKAN ANGKA INI ---
-    max_size = 33 # Naikkan ke 33 agar full mentok di embed HP
+    bar_size = 20 # Ukuran ideal untuk Mobile agar tidak patah baris
+    percentage = current / total
+    progress = max(0, min(int(percentage * bar_size), bar_size))
     
-    # Logika Dinamis: 
-    # Lagu pendek (1-3 mnt) bar akan terlihat lebih ringkas.
-    # Lagu panjang (>10 mnt) bar akan memanjang sampai max_size.
-    dynamic_size = max(20, min(int(total / 30), max_size)) 
+    # Menggunakan karakter yang lebih tebal untuk area yang sudah terlewati
+    bar_filled = "▬" * progress
+    bar_empty = "─" * (bar_size - progress)
     
-    
-    progress = min(int((current / total) * dynamic_size), dynamic_size)
-    
-    
-    # Gabungan simbol: ▬ untuk yang sudah lewat, 🔘 posisi skrg, ─ garis sisa
-    bar = "▬" * progress + "🔘" + "─" * (dynamic_size - progress)
-    return bar
+    if progress >= bar_size:
+        return bar_filled + "🔘"
+    return bar_filled + "🔘" + bar_empty
+
 
 
 
 #
-# 🖼️ 4.4.  :	Funstion def Embed Dasboard - MEDIA PLAYER
+# 🖼️ 4.4.  :	Function Dashboard (SINKRONISASI MODEREN)
 # ------------------------------------------------------------------------------
 #
 #
-def generate_embed(current, total, title, url, thumb, req, guild_id):
-    """Desain Dashboard Media Player Premium Style"""
-    q = get_queue(guild_id)
+def buat_embed_dashboard(q, elapsed_time, duration, title, url, thumbnail, user):
+    # Hijau jika Loop aktif, Biru Gelap jika standar
+    warna = 0x2ecc71 if q.loop else 0x2b2d31
+    bar_visual = create_progress_bar(elapsed_time, duration)
+    
+    time_now = format_time(elapsed_time)
+    time_total = format_time(duration)
+    
     vol_percent = int(q.volume * 100)
-    
-    # --- FIX FORMATTER JAM ---
-    def fmt(sec):
-        sec = int(sec)
-        hrs = sec // 3600
-        mins = (sec % 3600) // 60
-        secs = sec % 60
-        if hrs > 0:
-            return f"{hrs}:{mins:02}:{secs:02}"
-        else:
-            return f"{mins:02}:{secs:02}"
-    # -------------------------
+    vol_emoji = "🔇" if vol_percent == 0 else "🔈" if vol_percent < 50 else "🔊"
 
-    dur_str = f"**{fmt(current)}** / **{fmt(total)}**" if total else "🔴 **LIVE STREAM**"
-    
-    # Sisanya tetap sama seperti kode asli kamu...
-    prog_bar = create_progress_bar(current, total)
-    embed = discord.Embed(color=0x2b2d31) 
-    # - Logo Roket 
-    #embed.set_author(name="SEDANG DIPUTAR", icon_url="https://cdn.pixabay.com/animation/2023/06/13/15/12/15-12-37-624_512.gif")
-    
-    # - Logo Circle muter 
-    #embed.set_author(name="SEDANG DIPUTAR", icon_url="https://cdn.pixabay.com/animation/2024/03/20/05/16/05-16-04-416_512.gif")
-    
-    # - Logo kreta muter 
+    embed = discord.Embed(color=warna)
     embed.set_author(name="SEDANG DIPUTAR", icon_url="https://cdn.pixabay.com/animation/2022/12/25/06/28/06-28-22-725_512.gif")
     
-    # - Logo Awal
-	#embed.set_author(name="SEDANG DIPUTAR", icon_url="https://cdn.pixabay.com/animation/2023/06/13/15/12/15-12-37-624_512.gif")
-    embed.description = (f"## 🎵 [{title}]({url})\n" f"━━━━━━━━━━━━━━━━━━━━━━\n" f"{prog_bar}\n" f"{dur_str}\n")
-    vol_emoji = "🔇" if vol_percent == 0 else "🔈" if vol_percent < 40 else "🔉" if vol_percent < 70 else "🔊"
-    embed.add_field(name="👤 Pemesan", value=req.mention, inline=True)
+    embed.description = (
+        f"## 🎵 [{title}]({url})\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{bar_visual}\n"
+        f"⏱️ `{time_now}` / `{time_total}`\n"
+    )
+    
+    embed.add_field(name="👤 Pemesan", value=user.mention, inline=True)
     embed.add_field(name=f"{vol_emoji} Volume", value=f"`{vol_percent}%`", inline=True)
-    embed.add_field(name="📡 Audio Source", value="`Lossless 192kbps`", inline=True)
-    if thumb: embed.set_thumbnail(url=thumb)
-    embed.set_footer(text=f"Angelss V17 Premium • {req.display_name}", icon_url=req.display_avatar.url)
+    embed.add_field(name="🔄 Loop Status", value=f"`{'AKTIF' if q.loop else 'OFF'}`", inline=True)
+    
+    if thumbnail: embed.set_thumbnail(url=thumbnail)
+    embed.set_footer(text=f"Angelss Project V17 • Final Fix", icon_url=user.display_avatar.url)
+    
     return embed
 
 
 
+
+
 #
-# ⏱️ 4.5.  :	Funstion asynce def  system auto update bar and durasi per 3 detik	| sengaja fungsi ini aku taruh di def Function agar sinkron dengan progress bar nya 
+# 🔄 4.5.  :	Function Embed Loop
 # ------------------------------------------------------------------------------
 #
 #
-async def update_player_interface(interaction, message, total_duration, title, url, thumb, req, guild_id):
-    """Looping background dengan interval 5 detik (Struktur Asli Kamu + Sinkron ID)"""
-    # Ambil antrean berdasarkan guild_id yang dikirim
-    q = get_queue(guild_id) 
-    try:
-        while True:
-            # 1. Hitung waktu berjalan secara real-time
-            current_time = time.time() - q.start_time
-            
-            # 2. Berhenti jika lagu sudah mencapai akhir durasi
-            if total_duration > 0 and current_time > total_duration:
-                break
-                
-            # 3. Buat tampilan embed terbaru (Sekarang mengoper guild_id ke generate_embed)
-            new_embed = generate_embed(current_time, total_duration, title, url, thumb, req, guild_id)
-            
-            try:
-                # 4. Kirim update ke Discord
-                await message.edit(embed=new_embed)
-            except (discord.NotFound, Exception):
-                # Berhenti jika pesan dashboard dihapus atau ada error jaringan
-                break 
+def buat_embed_loop(user, status_aktif, judul_lagu):
+    """Pabrik visual untuk status pengulangan (Looping) ✨"""
+    if status_aktif:
+        emoji = "🔂"
+        pesan = "LOOP AKTIF"
+        detail = f"Lagu **{judul_lagu}** akan diputar terus-menerus."
+        warna = 0x2ecc71  # Hijau Sukses
+    else:
+        emoji = "🔁"
+        pesan = "LOOP DIMATIKAN"
+        detail = "Bot akan lanjut memutar lagu berikutnya di antrean."
+        warna = 0xe74c3c  # Merah/Normal
 
-            # --- JEDA 5 DETIK ---
-            await asyncio.sleep(3) 
-            
-    except asyncio.CancelledError:
-        # Berhenti jika lagu di-skip atau tombol Stop ditekan
-        pass
-
-
-
-
-
-
-
-
-
-
-
-
-
+    embed = discord.Embed(
+        title=f"{emoji} {pesan}",
+        description=(
+            f"✨ **{user.mention}** mengubah pengaturan pengulangan.\n\n"
+            f"ℹ️ **Status:** {detail}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        ),
+        color=warna
+    )
+    
+    # Tambahkan footer khas Angelss Project
+    embed.set_footer(
+        text=f"System Loop • Angelss Project V17", 
+        icon_url=user.display_avatar.url
+    )
+    
+    return embed
 
 
 
@@ -474,7 +475,67 @@ async def update_player_interface(interaction, message, total_duration, title, u
 
 
 #
-# 🏗️ 6.1.  :	Class Modern Bot & Notification Online System - PINDAH - KE SINI - Akar utama 
+# 🛑 4.6.  :	Function Embed Stop
+# ------------------------------------------------------------------------------
+#
+#
+def buat_embed_stop(user, jumlah):
+    embed = discord.Embed(
+        title="🛑 SYSTEM TERMINATED",
+        description=(
+            f"✨ **{user.mention}** telah menghentikan sesi musik.\n\n"
+            f"🧹 **Antrean:** `{jumlah}` lagu telah dibersihkan.\n"
+            f"📡 **Status:** Bot telah meninggalkan Voice Channel.\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        ),
+        color=0x2f3136
+    )
+    embed.set_thumbnail(url="https://i.ibb.co.com/KppFQ6N6/Logo1.gif")
+    # Tambahkan ini di def-nya kii biar makin keren
+    embed.set_footer(text="Sesi berakhir • Angelss Project V17") 
+    return embed
+
+
+
+
+#
+# 🔊 4.7.  :	
+# ------------------------------------------------------------------------------
+#
+#
+def buat_embed_volume(persen, user):
+    """Pabrik visual untuk Volume Audio"""
+    # 1. Tentukan Warna & Status
+    if persen > 80:
+        warna, status = 0xe74c3c, "⚠️ Volume Tinggi"
+    elif persen > 50:
+        warna, status = 0xf1c40f, "🔉 Volume Sedang"
+    else:
+        warna, status = 0x3498db, "🔈 Volume Standar"
+
+    # 2. Buat Visual Bar
+    bar = "▰" * (persen // 10) + "▱" * (10 - (persen // 10))
+
+    # 3. Rakit Embed
+    embed = discord.Embed(
+        title="🎚️ Audio Mixer Console",
+        description=(
+            f"**Status:** {status}\n"
+            f"**Level:** `{persen}%` / `100%` \n"
+            f"`{bar}`\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        ),
+        color=warna
+    )
+    embed.set_footer(text=f"Requested by {user.display_name}", icon_url=user.display_avatar.url)
+    return embed
+
+
+
+
+
+#
+# 🏗️ 4.8.  :	Class Modern Bot & Notification Online System - PINDAH - KE SINI - Akar utama 
 # ------------------------------------------------------------------------------
 #
 #
@@ -575,279 +636,26 @@ bot = ModernBot()
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 # --- [ 5 ] ---
-#
-# ==============================================================================
-#			[ FUNCTION HELPER - ASYNCE DEF  - MODERN ]
-# ==============================================================================
-
-
-#
-#  5.1. :	Function Auto Disconnect VC
-# ------------------------------------------------------------------------------
-#
-#
-@bot.event
-async def on_voice_state_update(member, before, after):
-    # Logika: Jika ada user (bukan bot) keluar dari VC
-    if not member.bot and before.channel is not None:
-        vc = member.guild.voice_client
-        
-        # Cek apakah bot berada di channel yang ditinggalkan dan sekarang hanya sendirian
-        if vc and vc.channel.id == before.channel.id and len(vc.channel.members) == 1:
-            
-            q = get_queue(member.guild.id)
-            msg_chan = None
-
-            # PRIORITAS CHANNEL: Mencari tempat terbaik untuk kirim notifikasi
-            if q.last_dashboard:
-                msg_chan = q.last_dashboard.channel
-            elif q.text_channel_id:
-                msg_chan = bot.get_channel(q.text_channel_id)
-            
-            # Jika msg_chan ditemukan, kirim peringatan
-            if msg_chan:
-                try:
-                    peringatan = await msg_chan.send(
-                        f"⚠️ **Otomatis Keluar:** Voice Channel kosong. Bot akan keluar dalam **30 detik** jika tidak ada yang kembali.", 
-                        delete_after=30
-                    )
-                except:
-                    peringatan = None
-                
-                # Tunggu 30 detik (masa tenggang)
-                await asyncio.sleep(30)
-                
-                # Cek kembali kondisi Voice Client setelah menunggu
-                vc_sekarang = member.guild.voice_client
-                
-                if vc_sekarang and vc_sekarang.channel:
-                    # Cek apakah ada manusia (bukan bot) yang kembali ke channel
-                    human_members = [m for m in vc_sekarang.channel.members if not m.bot]
-                    
-                    if len(human_members) > 0:
-                        # Ada manusia kembali! Batalkan keluar
-                        try:
-                            if peringatan: await peringatan.delete()
-                        except: pass
-                        await msg_chan.send("✨ **Informasi:** Seseorang telah kembali! Bot tetap standby di sini.", delete_after=10)
-                    else:
-                        # Masih kosong (hanya bot sendiri), bersihkan data dan keluar
-                        q.queue.clear()
-                        # Hapus dashboard terakhir agar tidak membingungkan
-                        if q.last_dashboard:
-                            try: await q.last_dashboard.delete()
-                            except: pass
-                        q.last_dashboard = None
-                        
-                        if vc_sekarang.is_connected():
-                            await vc_sekarang.disconnect()
-                            await msg_chan.send("👋 **Informasi:** Bot telah keluar karena Voice Channel kosong terlalu lama.", delete_after=10)
-
-
-#
-# ⏭️ 5.2. :	HELPER: NEXT LOGIC
-# ------------------------------------------------------------------------------
-#
-#
-async def next_logic(interaction):
-    """Logika otomatis untuk memutar lagu berikutnya dari antrean."""
-    q = get_queue(interaction.guild_id)
-    
-    # Jeda 2 detik agar sesi FFmpeg sebelumnya benar-benar tertutup bersih
-    await asyncio.sleep(2)
-    
-    if q.queue:
-        next_song = q.queue.popleft()
-        # Memanggil start_stream untuk lagu berikutnya
-        await start_stream(interaction, next_song['url'])
-    else:
-        # Jika antrean habis, bersihkan dashboard aktif
-        if q.last_dashboard:
-            try: await q.last_dashboard.delete()
-            except: pass
-            q.last_dashboard = None
-            
-        emb_finish = discord.Embed(
-            title="✨ Antrean Selesai",
-            description="Semua lagu telah diputar. Bot standby dalam mode hemat daya. 💤",
-            color=0x34495e
-        )
-        # Kirim pesan ke channel terakhir yang aktif
-        channel = bot.get_channel(q.text_channel_id) or interaction.channel
-        if channel:
-            await channel.send(embed=emb_finish, delete_after=15)
-
-
-
-#
-# 📡 5.2. :	HELPER: START STREAM
-# ------------------------------------------------------------------------------
-#
-#
-current_update_task = None 
-start_time_tracker = 0
-
-async def start_stream(interaction, url):
-    q = get_queue(interaction.guild_id)
-    vc = interaction.guild.voice_client
-    if not vc: return
-
-    # 1. Matikan update bar sebelumnya jika masih jalan
-    if q.update_task and not q.update_task.done():
-        q.update_task.cancel()
-
-    try:
-        # 2. Ambil data lagu (Gunakan YTDL)
-        data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
-        if 'entries' in data: data = data['entries'][0]
-        
-        stream_url = data.get('url')
-        
-        # 3. Setup Player
-        audio_source = discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTIONS)
-        source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
-
-        def after_playing(error):
-            if q.update_task: q.update_task.cancel() # Matikan update bar saat lagu mati
-            if error: logger.error(f"⚠️ Player Error: {error}")
-            bot.loop.create_task(next_logic(interaction))
-
-        if vc.is_playing(): vc.stop()
-        vc.play(source, after=after_playing)
-        
-        # 4. Simpan data untuk Timer Dashboard
-        q.start_time = time.time()
-        q.total_duration = data.get('duration', 0)
-        q.current_info = data # Simpan info lengkap
-        
-        thumbnail = data.get('thumbnail')
-        title = data.get('title')
-        web_url = data.get('webpage_url', url)
-        requester = interaction.user
-
-        # 5. Hapus dashboard lama agar chat bersih
-        if q.last_dashboard:
-            try: await q.last_dashboard.delete()
-            except: pass
-
-        # (Lanjutan Bagian 5 ke bawah pada fungsi start_stream kamu)
-
-        # 5. Hapus dashboard lama agar chat bersih
-        if q.last_dashboard:
-            try: await q.last_dashboard.delete()
-            except: pass
-
-        # 6. Kirim Dashboard Baru (Awal)
-        # --- TAMBAHKAN interaction.guild_id DI AKHIR ---
-        emb = generate_embed(0, q.total_duration, title, web_url, thumbnail, requester, interaction.guild_id)
-        q.last_dashboard = await interaction.channel.send(embed=emb, view=MusicDashboard(interaction.guild_id))
-
-        # 7. JALANKAN MESIN UPDATE BAR
-        # --- TAMBAHKAN interaction.guild_id DI AKHIR ---
-        q.update_task = bot.loop.create_task(
-            update_player_interface(interaction, q.last_dashboard, q.total_duration, title, web_url, thumbnail, requester, interaction.guild_id)
-        )
-
-    except Exception as e:
-        logger.error(f"Gagal Start Stream: {e}")
-        await interaction.channel.send(f"⚠️ Terjadi kesalahan: {e}", delete_after=5)
-
-
-
-#
-# 🎮 5.2. :	HELPER: PLAY CONTROL
-# ------------------------------------------------------------------------------
-#
-#
-async def play_music(interaction, url):
-    """Fungsi kontrol untuk memutuskan apakah lagu diputar langsung atau antre."""
-    q = get_queue(interaction.guild_id)
-    q.text_channel_id = interaction.channel.id
-    
-    # 1. Koneksi otomatis ke Voice Channel
-    if not interaction.guild.voice_client:
-        if interaction.user.voice:
-            try:
-                await interaction.user.voice.channel.connect()
-            except Exception as e:
-                return await interaction.followup.send(f"❌ Gagal koneksi: {e}", ephemeral=True)
-        else:
-            return await interaction.followup.send("❌ **Gagal:** Kamu harus masuk ke Voice Channel dulu!", ephemeral=True)
-    
-    vc = interaction.guild.voice_client
-    
-    # 2. Cek apakah bot sedang memutar musik atau dijeda
-    if vc.is_playing() or vc.is_paused():
-        try:
-            # Ambil info lagu untuk ditampilkan di pesan antrean
-            data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
-            if 'entries' in data: data = data['entries'][0]
-
-            q.queue.append({'title': data['title'], 'url': url})
-            
-            # --- TETAP PAKAI EMBED ASLI KAMU ---
-            emb_q = discord.Embed(
-                title="📥 Antrean Ditambahkan",
-                description=f"✨ **[{data['title']}]({url})**",
-                color=0x3498db
-            )
-            emb_q.set_footer(text=f"Posisi Antrean: {len(q.queue)}", icon_url=interaction.user.display_avatar.url)
-            await interaction.followup.send(embed=emb_q, ephemeral=True)
-            
-        except Exception as e:
-            await interaction.followup.send(f"⚠️ Gagal menambahkan ke antrean: {str(e)[:50]}", ephemeral=True)
-    
-    else:
-        # 3. Jika bot sedang menganggur, bersihkan player lama dulu (Anti-Stuck)
-        if vc.is_playing(): 
-            vc.stop()
-            
-        # Langsung jalankan mesin pemutar (Pastikan start_stream sudah pakai FFMPEG_OPTIONS hasil audit)
-        await start_stream(interaction, url)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# --- [ 6 ] ---
 #
 # ==============================================================================
 #			[ CLASS SYSTEM ]
 # ==============================================================================
-
-
-
-
-
-
-
-
-
-
-
- 
- 
- 
- 
  
 #
-# 🔍 6.3. :	Class System Search Engine Pilihan
+# 🔍 5.1. :	Class System Search Engine Pilihan
 # ------------------------------------------------------------------------------
 #
 #
@@ -944,65 +752,80 @@ class SearchControlView(discord.ui.View):
 
 
 
-
-
 #
-# 🎛️ 6.5.  :	Ui Class Dashboard & Volume Control
+# 🎛️ 5.2.  :	Ui Class Volume Control (STABLE VERSION)
 # ------------------------------------------------------------------------------
-#
 #
 class VolumeControlView(discord.ui.View):
     def __init__(self, guild_id):
-        super().__init__(timeout=60)
+        super().__init__(timeout=60) # Menu tutup otomatis dalam 60 detik
         self.guild_id = guild_id
 
     def create_embed(self):
+        """Membuat tampilan awal pop-up volume"""
         q = get_queue(self.guild_id)
         vol_percent = int(q.volume * 100)
-        embed = discord.Embed(title="🎚️ Pengaturan Audio", color=0x3498db)
-        
-        # Visual Bar (Lebih akurat)
-        bar_length = 10
-        filled = round(q.volume * 10)
-        bar = "▰" * filled + "▱" * (bar_length - filled)
-        
-        embed.description = f"Volume Saat Ini: **{vol_percent}%**\n`{bar}`"
-        embed.set_footer(text="Gunakan tombol di bawah untuk menyesuaikan suara.")
+        # Gunakan fungsi pabrik agar visualnya konsisten dengan /volume
+        from discord import Interaction # Pastikan context tersedia
+        # Kita buat dummy user info jika perlu, tapi lebih baik panggil helper
+        # Di sini kita pakai embed standar dulu untuk inisialisasi
+        embed = discord.Embed(title="🎚️ Audio Mixer Console", color=0x3498db)
+        bar = "▰" * (vol_percent // 10) + "▱" * (10 - (vol_percent // 10))
+        embed.description = f"**Status:** Menyesuaikan...\n**Level:** `{vol_percent}%`\n`{bar}`"
         return embed
 
     @discord.ui.button(label="-10%", style=discord.ButtonStyle.danger, emoji="🔉")
     async def down(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer() 
         q = get_queue(self.guild_id)
         
-        q.volume = max(0.0, q.volume - 0.1)
+        # 1. Hitung persen baru (Minimal 0%)
+        persen_baru = max(0, int((q.volume - 0.1) * 100))
+        q.volume = persen_baru / 100
         
+        # 2. Update Voice Client Engine
         vc = interaction.guild.voice_client
-        # PENGAMAN: Cek apakah source mendukung pengaturan volume
         if vc and vc.source:
+            try: vc.source.volume = q.volume
+            except: pass
+        
+        # 3. [FIX] Update Dashboard Utama (Jika sedang aktif)
+        if q.last_dashboard:
             try:
-                vc.source.volume = q.volume
-            except AttributeError:
-                # Jika source bukan PCMVolumeTransformer, kita tidak bisa ubah volumenya secara langsung
-                pass
+                emb_dash = q.last_dashboard.embeds[0]
+                # Field Volume biasanya ada di index 1 (cek Section 4.4)
+                emb_dash.set_field_at(1, name="🔊 Volume", value=f"`{persen_baru}%`", inline=True)
+                await q.last_dashboard.edit(embed=emb_dash)
+            except: pass
                 
-        await interaction.edit_original_response(embed=self.create_embed())
+        # 4. Update Pop-up Volume saat ini secara INSTAN
+        embed_update = buat_embed_volume(persen_baru, interaction.user)
+        await interaction.response.edit_message(embed=embed_update)
 
     @discord.ui.button(label="+10%", style=discord.ButtonStyle.success, emoji="🔊")
     async def up(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer() 
         q = get_queue(self.guild_id)
         
-        q.volume = min(1.0, q.volume + 0.1) 
+        # 1. Hitung persen baru (Maksimal 100%)
+        persen_baru = min(100, int((q.volume + 0.1) * 100))
+        q.volume = persen_baru / 100
         
+        # 2. Update Voice Client Engine
         vc = interaction.guild.voice_client
         if vc and vc.source:
-            try:
-                vc.source.volume = q.volume
-            except AttributeError:
-                pass
+            try: vc.source.volume = q.volume
+            except: pass
 
-        await interaction.edit_original_response(embed=self.create_embed())
+        # 3. [FIX] Update Dashboard Utama (Jika sedang aktif)
+        if q.last_dashboard:
+            try:
+                emb_dash = q.last_dashboard.embeds[0]
+                emb_dash.set_field_at(1, name="🔊 Volume", value=f"`{persen_baru}%`", inline=True)
+                await q.last_dashboard.edit(embed=emb_dash)
+            except: pass
+
+        # 4. Update Pop-up Volume saat ini secara INSTAN
+        embed_update = buat_embed_volume(persen_baru, interaction.user)
+        await interaction.response.edit_message(embed=embed_update)
 
 
 
@@ -1010,198 +833,459 @@ class VolumeControlView(discord.ui.View):
 
 
 #
-# 📼 6.7.  :	Ui Class: Dashboard & Audio - Player
+# 📼 5.3.  :	Ui Class: Dashboard & Audio - Player (FIXED)
 # ------------------------------------------------------------------------------
 #
 #
 class MusicDashboard(discord.ui.View):
-    def __init__(self, guild_id):
+    def __init__(self, guild_id, bot_instance=None): 
         super().__init__(timeout=None)
         self.guild_id = guild_id
+	
+	
+	# --- TOMBOL 1: -10 ---
+	#
+    @discord.ui.button(label="-10s", emoji="⏪", style=discord.ButtonStyle.secondary)
+    async def backward(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        q = get_queue(self.guild_id)
+        current_pos = time.time() - q.start_time
+        new_pos = max(0, current_pos - 10)
+        await start_stream(interaction, q.current_info['webpage_url'], seek_time=new_pos)
 
-    async def update_button(self, message):
-        """Fungsi manual untuk menyamakan tampilan tombol (SINKRONISASI)"""
-        vc = message.guild.voice_client
-        if not self.children: return
-        button = self.children[0] 
-        if vc and vc.is_paused():
-            button.emoji = "▶️"; button.label = "Lanjut"; button.style = discord.ButtonStyle.success
-        else:
-            button.emoji = "⏸️"; button.label = "Jeda"; button.style = discord.ButtonStyle.secondary
-        await message.edit(view=self)
 
+	# --- TOMBOL 2: JEDA / LANJUT ---
+    #
     @discord.ui.button(label="Jeda", emoji="⏸️", style=discord.ButtonStyle.secondary)
     async def pp(self, interaction: discord.Interaction, button: discord.ui.Button):
         q = get_queue(self.guild_id)
         vc = interaction.guild.voice_client
-        if not vc: return await interaction.response.send_message("❌ Bot tidak ada di VC.", ephemeral=True)
+        
+        if not vc: 
+            return await interaction.response.send_message("❌ Bot tidak ada di VC.", ephemeral=True)
         
         if vc.is_playing():
             # LOGIKA PAUSE
             vc.pause()
-            if q.update_task: q.update_task.cancel()
+            q.pause_time = time.time() # Catat waktu jeda
+            if q.update_task: 
+                q.update_task.cancel()
+            
             button.emoji = "▶️"; button.label = "Lanjut"; button.style = discord.ButtonStyle.success 
         else:
-            # LOGIKA RESUME (SINKRONISASI WAKTU & TASK)
+            # LOGIKA RESUME
             current_pos = time.time() - q.start_time
             q.start_time = time.time() - current_pos
             vc.resume()
             
-            # Memulai kembali looping bar dengan guild_id yang benar
-            q.update_task = bot.loop.create_task(
+            # Restart Progress Bar (FIXED: Using interaction.client to avoid global variable issues)
+            q.update_task = interaction.client.loop.create_task(
                 update_player_interface(
-                    interaction, 
-                    q.last_dashboard, 
-                    q.total_duration, 
-                    q.current_info['title'], 
-                    q.current_info['webpage_url'], 
-                    q.current_info['thumbnail'], 
-                    interaction.user,
-                    self.guild_id # Fix: Sinkron ID
+                    q.last_dashboard, q.total_duration, 
+                    q.current_info['title'], q.current_info['webpage_url'], 
+                    q.current_info['thumbnail'], interaction.user, self.guild_id
                 )
             )
+            
             button.emoji = "⏸️"; button.label = "Jeda"; button.style = discord.ButtonStyle.secondary
-        
-        await interaction.response.edit_message(view=self)
 
-    # --- TOMBOL 2: VOLUME ---
+        # Update visual
+        elapsed = time.time() - q.start_time
+        if elapsed > q.total_duration: elapsed = q.total_duration
+        
+        emb_update = buat_embed_dashboard(
+            q, elapsed, q.total_duration, 
+            q.current_info['title'], q.current_info['webpage_url'], 
+            q.current_info['thumbnail'], interaction.user
+        )
+        
+        await interaction.response.edit_message(embed=emb_update, view=self)
+	
+	
+	# --- TOMBOL 3: +10 ---
+    #
+    @discord.ui.button(label="+10s", emoji="⏩", style=discord.ButtonStyle.secondary)
+    async def forward(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        q = get_queue(self.guild_id)
+        current_pos = time.time() - q.start_time
+        new_pos = min(q.total_duration, current_pos + 10)
+        await start_stream(interaction, q.current_info['webpage_url'], seek_time=new_pos)
+
+
+	# --- TOMBOL 4: SKIP ---
+    #
+    @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.primary)
+    async def sk(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        q = get_queue(self.guild_id)
+        vc = interaction.guild.voice_client
+        
+        # Pengaman Loop: Matikan loop sebentar agar pindah lagu, bukan memutar ulang lagu yang sama
+        original_loop = q.loop
+        q.loop = False
+        
+        if q.update_task: q.update_task.cancel()
+        if vc: vc.stop() # Ini akan otomatis memicu after_playing di start_stream
+        
+        # Kembalikan status loop asli untuk lagu berikutnya
+        q.loop = original_loop
+
+
+	# --- TOMBOL 5: LOOP ---
+    #
+    @discord.ui.button(label="Loop: OFF", emoji="🔁", style=discord.ButtonStyle.gray)
+    async def loop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        q = get_queue(self.guild_id)
+        q.loop = not q.loop
+        button.label = "Loop: ON" if q.loop else "Loop: OFF"
+        button.style = discord.ButtonStyle.success if q.loop else discord.ButtonStyle.gray
+        button.emoji = "🔂" if q.loop else "🔁"
+        
+        if interaction.message.embeds:
+            emb = interaction.message.embeds[0]
+            emb.color = 0x2ecc71 if q.loop else 0x2b2d31
+            await interaction.response.edit_message(embed=emb, view=self)
+        else:
+            await interaction.response.edit_message(view=self)
+
+
+	# --- TOMBOL 6: VOLUME ---
+	#
     @discord.ui.button(label="Volume", emoji="🔊", style=discord.ButtonStyle.gray)
     async def vol(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = VolumeControlView(self.guild_id)
         await interaction.response.send_message(embed=view.create_embed(), view=view, ephemeral=True)
-    
-    # --- TOMBOL 3: ANTREAN ---
+
+
+    # --- TOMBOL 7: ANTREAN ---
     @discord.ui.button(label="Antrean", emoji="📜", style=discord.ButtonStyle.gray)
     async def list_q_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.tampilkan_antrean(interaction)
-
-    async def tampilkan_antrean(self, interaction: discord.Interaction):
-        q = get_queue(self.guild_id)
-        if q.last_queue_msg:
-            try: await q.last_queue_msg.delete()
-            except: pass
-
-        if not q.queue:
-            msg_empty = "📪 Antrean saat ini kosong."
-            if interaction.response.is_done():
-                return await interaction.followup.send(msg_empty, ephemeral=True)
-            return await interaction.response.send_message(msg_empty, ephemeral=True)
+        # Memanggil fungsi pusat di Section 6.7
+        await logic_tampilkan_antrean(interaction, self.guild_id)
         
-        emb = discord.Embed(title="📜 Antrean Musik (Publik)", color=0x2b2d31)
-        description = "Pilih lagu di bawah untuk langsung diputar (Lompat Antrean)!\n\n"
         
-        options = []
-        for i, item in enumerate(list(q.queue)[:10]):
-            description += f"**{i+1}.** {item['title'][:50]}...\n"
-            options.append(discord.SelectOption(
-                label=f"{i+1}. {item['title'][:25]}", 
-                value=str(i),
-                emoji="🎵"
-            ))
-        
-        emb.description = description
-        select = discord.ui.Select(placeholder="🚀 Pilih lagu untuk dilompati...", options=options)
-
-        async def select_callback(inter: discord.Interaction):
-            for option in select.options:
-                if option.value == select.values[0]:
-                    option.emoji = "✅"
-            await inter.response.edit_message(view=view_select)
-            
-            idx = int(select.values[0])
-            chosen = q.queue[idx]
-            judul_lama = "Lagu sebelumnya"
-            if q.last_dashboard and q.last_dashboard.embeds:
-                try: 
-                    judul_lama = q.last_dashboard.embeds[0].description.split('[')[1].split(']')[0]
-                except: pass
-
-            del q.queue[idx]
-            q.queue.appendleft(chosen)
-            
-            try:
-                embed_rapi = buat_embed_skip(inter.user, judul_lama, f"⏭️ **Selanjutnya:** {chosen['title']}")
-                skip_msg = await inter.followup.send(embed=embed_rapi)
-            except:
-                skip_msg = await inter.followup.send(f"⏭️ Melompati ke: **{chosen['title']}**")
-
-            if inter.guild.voice_client: inter.guild.voice_client.stop()
-            await asyncio.sleep(15); 
-            try: await skip_msg.delete()
-            except: pass
-
-        select.callback = select_callback
-        view_select = discord.ui.View(timeout=60)
-        view_select.add_item(select)
-        
-        if interaction.response.is_done():
-            q.last_queue_msg = await interaction.followup.send(embed=emb, view=view_select)
-        else:
-            await interaction.response.send_message(embed=emb, view=view_select)
-            q.last_queue_msg = await interaction.original_response()
-
-    # --- TOMBOL 4: SKIP ---
-    @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.primary)
-    async def sk(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=False)
-        q = get_queue(self.guild_id)
-        vc = interaction.guild.voice_client
-        if q.update_task: q.update_task.cancel()
-        
-        if not vc or not (vc.is_playing() or vc.is_paused()):
-            return await interaction.followup.send("❌ **Informasi:** Tidak ada lagu untuk di-skip.", ephemeral=True)
-
-        current_title = "Tidak diketahui"
-        if q.last_dashboard and q.last_dashboard.embeds:
-            try:
-                current_title = q.last_dashboard.embeds[0].description.split('[')[1].split(']')[0]
-            except: pass
-
-        next_info = "Antrean habis, bot akan standby. ✨"
-        if q.queue: next_info = f"⏭️ **Selanjutnya:** {q.queue[0]['title']}"
-
-        embed = discord.Embed(
-            title="⏭️ MUSIC SKIP SYSTEM",
-            description=(
-                f"✨ **{interaction.user.mention}** telah melewati lagu!\n\n"
-                f"🗑️ **Dilewati:** {current_title}\n"
-                f"📥 **Status Antrean:** {next_info}\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            ),
-            color=0xe74c3c
-        )
-        embed.set_footer(text="Gunakan /play untuk menambah lagu", icon_url=interaction.user.display_avatar.url)
-        vc.stop()
-        await interaction.followup.send(embed=embed)
-        await asyncio.sleep(15)
-        try:
-            msg = await interaction.original_response()
-            await msg.delete()
-        except: pass
-
-    # --- TOMBOL 5: STOP ---
+	# --- TOMBOL 8: STOP ---
+	#
     @discord.ui.button(label="Stop", emoji="⏹️", style=discord.ButtonStyle.danger)
     async def st(self, interaction: discord.Interaction, button: discord.ui.Button):
         q = get_queue(self.guild_id)
         vc = interaction.guild.voice_client
         if q.update_task: q.update_task.cancel()
-        
-        jumlah_antrean = len(q.queue) 
         q.queue.clear()
         if vc: await vc.disconnect()
+        await interaction.response.send_message(embed=buat_embed_stop(interaction.user, 0), delete_after=10)
+
+
+
+
+
+
+
+
+
+
+
+
+
+# --- [ 6 ] ---
+#
+# ==============================================================================
+#			[ FUNCTION HELPER - ASYNCE DEF  - MODERN ]
+# ==============================================================================
+
+
+
+#
+# ⏱️ 6.1.  :	Funstion asynce def  system auto update bar and durasi per 3 detik	| sengaja fungsi ini aku taruh di def Function agar sinkron dengan progress bar nya 
+# ------------------------------------------------------------------------------
+#
+#
+async def update_player_interface(message, duration, title, url, thumbnail, user, guild_id):
+    q = get_queue(guild_id)
+    while not bot.is_closed():
+        vc = message.guild.voice_client
+        if not vc or not (vc.is_playing() or vc.is_paused()):
+            break
             
-        embed = discord.Embed(
-            title="🛑 SYSTEM TERMINATED",
-            description=(
-                f"✨ **{interaction.user.mention}** telah mematikan pemutar musik.\n\n"
-                f"🧹 **Pembersihan:** `{jumlah_antrean}` lagu telah dihapus dari antrean.\n"
-                f"📡 **Status:** Bot telah keluar dari Voice Channel.\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            ),
-            color=0x2f3136
-        )
-        embed.set_thumbnail(url="https://i.ibb.co.com/KppFQ6N6/Logo1.gif")
-        await interaction.response.send_message(embed=embed, delete_after=20)
+        if vc.is_paused():
+            elapsed_time = q.pause_time - q.start_time if hasattr(q, 'pause_time') else time.time() - q.start_time
+        else:
+            elapsed_time = time.time() - q.start_time
+            
+        elapsed_time = max(0, min(elapsed_time, duration))
+
+        try:
+            embed = buat_embed_dashboard(q, elapsed_time, duration, title, url, thumbnail, user)
+            await message.edit(embed=embed) # View tidak perlu di-update terus menerus, cukup Embed
+        except Exception:
+            break
+        await asyncio.sleep(5)
+
+
+
+
+
+
+
+#
+#  🔊⚠️ 6.2. :	Function Auto Disconnect VC (DEEP CLEAN VERSION)
+# ------------------------------------------------------------------------------
+#
+#
+@bot.event
+async def on_voice_state_update(member, before, after):
+    # Logika: Jika ada user (bukan bot) keluar dari VC
+    if not member.bot and before.channel is not None:
+        vc = member.guild.voice_client
+        
+        # Cek apakah bot berada di channel yang ditinggalkan dan sekarang hanya bot sendiri
+        if vc and vc.channel.id == before.channel.id and len(vc.channel.members) == 1:
+            
+            guild_id = member.guild.id
+            q = get_queue(guild_id)
+            msg_chan = None
+
+            # PRIORITAS CHANNEL: Mencari tempat terbaik untuk kirim notifikasi
+            if q.last_dashboard:
+                msg_chan = q.last_dashboard.channel
+            elif q.text_channel_id:
+                msg_chan = bot.get_channel(q.text_channel_id)
+            
+            if msg_chan:
+                try:
+                    peringatan = await msg_chan.send(
+                        f"⚠️ **Otomatis Keluar:** Voice Channel kosong. Bot akan keluar dalam **30 detik** jika tidak ada yang kembali.", 
+                        delete_after=30
+                    )
+                except:
+                    peringatan = None
+                
+                # Tunggu 30 detik (masa tenggang)
+                await asyncio.sleep(30)
+                
+                # Cek kembali kondisi Voice Client setelah menunggu
+                vc_sekarang = member.guild.voice_client
+                
+                if vc_sekarang and vc_sekarang.channel:
+                    # Cek apakah ada manusia (bukan bot) yang kembali ke channel
+                    human_members = [m for m in vc_sekarang.channel.members if not m.bot]
+                    
+                    if len(human_members) > 0:
+                        try:
+                            if peringatan: await peringatan.delete()
+                        except: pass
+                        await msg_chan.send("✨ **Informasi:** Seseorang telah kembali! Bot tetap standby.", delete_after=10)
+                    else:
+                        # --- [ POIN 2: DEEP CLEANING START ] ---
+                        
+                        # 1. Hentikan task update progress bar agar tidak error (Zombie Task)
+                        if q.update_task:
+                            q.update_task.cancel()
+                        
+                        # 2. Hapus pesan dashboard terakhir dari chat agar tidak membingungkan
+                        if q.last_dashboard:
+                            try: await q.last_dashboard.delete()
+                            except: pass
+                        
+                        # 3. Bersihkan seluruh data antrean di class MusicQueue
+                        q.clear_all() 
+                        
+                        # 4. Hapus object guild dari dictionary global 'queues' (Sangat penting untuk RAM)
+                        delete_queue(guild_id) 
+
+                        # 5. Putuskan koneksi suara
+                        if vc_sekarang.is_connected():
+                            await vc_sekarang.disconnect()
+                            await msg_chan.send("👋 **Informasi:** Sesi diakhiri karena Voice Channel kosong terlalu lama.", delete_after=10)
+
+
+
+
+#
+# ⏯️ 6.3. : HELPER: System Pause / Resume Dynamic (Sinkronisasi UI)
+# ------------------------------------------------------------------------------
+#
+#
+async def sync_dashboard_buttons(message, guild_id):
+    if not message: return
+    # MusicDashboard sudah ada di bawah, panggil langsung
+    view = MusicDashboard(guild_id)
+    vc = message.guild.voice_client
+    
+    for item in view.children:
+        if isinstance(item, discord.ui.Button) and item.label in ["Jeda", "Lanjut"]:
+            if vc and vc.is_paused():
+                item.emoji, item.label, item.style = "▶️", "Lanjut", discord.ButtonStyle.success
+            else:
+                item.emoji, item.label, item.style = "⏸️", "Jeda", discord.ButtonStyle.secondary
+            break
+    try:
+        await message.edit(view=view)
+    except: pass
+
+
+
+
+
+#
+# 📡 6.4 : MESIN UTAMA - START STREAM
+# ------------------------------------------------------------------------------
+#
+async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
+    g_id = interaction.guild.id if interaction else guild_id_manual
+    if not g_id: return
+    
+    q = get_queue(g_id)
+    if interaction: q.text_channel_id = interaction.channel.id
+
+    guild = bot.get_guild(g_id)
+    vc = guild.voice_client if guild else None
+    if not vc: return
+
+    # Stop task lama agar tidak double progress bar
+    if q.update_task: q.update_task.cancel()
+
+    try:
+        # Ekstrak metadata menggunakan executor agar bot tidak lag
+        data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+        if 'entries' in data: data = data['entries'][0]
+        q.current_info = data
+        
+        stream_url = data.get('url')
+        q.total_duration = data.get('duration', 0)
+        
+        # FFmpeg Config dengan fitur Seek
+        ffmpeg_before = FFMPEG_OPTIONS['before_options']
+        if seek_time: ffmpeg_before += f" -ss {seek_time}"
+
+        audio_source = discord.FFmpegPCMAudio(stream_url, before_options=ffmpeg_before, options=FFMPEG_OPTIONS['options'])
+        source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
+
+        def after_playing(error):
+            if error: logger.error(f"Player Error: {error}")
+            if q.update_task: bot.loop.call_soon_threadsafe(q.update_task.cancel)
+            
+            # Logika Loop vs Next
+            if q.loop:
+                bot.loop.create_task(start_stream(None, q.current_info['webpage_url'], guild_id_manual=g_id))
+            else:
+                bot.loop.create_task(next_logic(g_id))
+
+        if vc.is_playing(): vc.stop()
+        vc.play(source, after=after_playing)
+        
+        q.start_time = time.time() - (float(seek_time) if seek_time else 0)
+        
+        # Kirim Dashboard Baru
+        channel = bot.get_channel(q.text_channel_id)
+        if channel:
+            penerbit = interaction.user if interaction else bot.user
+            emb = buat_embed_dashboard(q, seek_time or 0, q.total_duration, data['title'], data['webpage_url'], data.get('thumbnail'), penerbit)
+            
+            if q.last_dashboard:
+                try: await q.last_dashboard.delete()
+                except: pass
+
+            q.last_dashboard = await channel.send(embed=emb, view=MusicDashboard(g_id))
+            q.update_task = bot.loop.create_task(
+                update_player_interface(q.last_dashboard, q.total_duration, data['title'], data['webpage_url'], data.get('thumbnail'), penerbit, g_id)
+            )
+
+    except Exception as e:
+        logger.error(f"Stream Error: {e}")
+        bot.loop.create_task(next_logic(g_id))
+        
+        
+        
+#
+# ⏭️ 6.5 : LOGIKA PINDAH LAGU OTOMATIS
+# ------------------------------------------------------------------------------
+#
+#
+async def next_logic(guild_id):
+    q = get_queue(guild_id)
+    await asyncio.sleep(1.5) # Jeda anti-spam API Discord
+    
+    if q.queue:
+        next_song = q.queue.popleft()
+        await start_stream(None, next_song['url'], guild_id_manual=guild_id)
+    else:
+        if q.last_dashboard:
+            try: await q.last_dashboard.delete()
+            except: pass
+            q.last_dashboard = None
+        
+        chan = bot.get_channel(q.text_channel_id)
+        if chan: await chan.send("✅ **Antrean selesai.**", delete_after=10)
+
+
+
+
+
+#
+# 🎮 6.6 : GATEWAY PEMUTAR (PLAY CONTROL)
+# ------------------------------------------------------------------------------
+#
+#
+async def play_music(interaction, url):
+    q = get_queue(interaction.guild_id)
+    q.text_channel_id = interaction.channel.id
+    
+    if not interaction.guild.voice_client:
+        if interaction.user.voice:
+            await interaction.user.voice.channel.connect()
+        else:
+            return await interaction.followup.send("❌ Masuk ke Voice dulu!", ephemeral=True)
+    
+    vc = interaction.guild.voice_client
+    
+    if vc.is_playing() or vc.is_paused():
+        try:
+            data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+            if 'entries' in data: data = data['entries'][0]
+            q.queue.append({'title': data['title'], 'url': url})
+            
+            emb = discord.Embed(title="📥 Antrean Ditambahkan", description=f"✨ **[{data['title']}]({url})**", color=0x3498db)
+            await interaction.followup.send(embed=emb, ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"⚠️ Error: {e}", ephemeral=True)
+    else:
+        await start_stream(interaction, url)
+
+
+
+
+
+#
+# 📜 6.7 :	LOGIKA TAMPILAN ANTREAN (CENTRALIZED)
+# ------------------------------------------------------------------------------
+#
+#
+async def logic_tampilkan_antrean(interaction: discord.Interaction, guild_id):
+    q = get_queue(guild_id)
+    
+    if not q.queue:
+        emb = discord.Embed(description="📪 **Antrean kosong.**", color=0x2b2d31)
+        return await (interaction.followup.send if interaction.response.is_done() else interaction.response.send_message)(embed=emb, ephemeral=True)
+    
+    # Ambil 10 lagu teratas
+    daftar = list(q.queue)
+    maks = 10
+    teks_lagu = [f"`{i+1}.` {item['title'][:50]}" for i, item in enumerate(daftar[:maks])]
+    
+    sisa = len(daftar) - maks
+    deskripsi = "\n".join(teks_lagu)
+    if sisa > 0: deskripsi += f"\n\n*...dan `{sisa}` lagu lainnya.*"
+
+    emb = discord.Embed(title="📜 Live Music Queue", description=deskripsi, color=0x3498db)
+    
+    if q.current_info:
+        emb.add_field(name="▶️ Sedang Diputar", value=f"**{q.current_info['title'][:60]}**", inline=False)
+    
+    emb.set_footer(text=f"Total: {len(daftar)} Lagu • Angelss Project V17")
+    
+    await (interaction.followup.send if interaction.response.is_done() else interaction.response.send_message)(embed=emb, ephemeral=True)
 
 
 
@@ -1235,40 +1319,52 @@ class MusicDashboard(discord.ui.View):
 #
 #
 @bot.tree.command(name="play", description="Putar musik menggunakan judul atau link YouTube")
+@app_commands.describe(cari="Masukkan Judul Lagu atau Link YouTube")
 async def play(interaction: discord.Interaction, cari: str):
-    # 1. Defer wajib untuk menghindari timeout 3 detik
+    # 1. Defer wajib untuk menghindari timeout 3 detik (Interaksi awal)
     await interaction.response.defer(ephemeral=True)
     
     q = get_queue(interaction.guild_id)
 
-    # Bersihkan pesan pencarian lama jika ada
+    # Bersihkan pesan pencarian lama jika masih ada di memory
     if q.last_search_msg:
         try: await q.last_search_msg.delete()
         except: pass
 
-    # A. LOGIKA JIKA INPUT ADALAH LINK
+    # --- [ LOGIKA A: INPUT ADALAH LINK ] ---
     if "http" in cari: 
         await interaction.followup.send("🔗 **Menganalisa tautan...**", ephemeral=True)
-        # Langsung lempar ke play_music (Sekarang aman karena play_music ada di atas)
+        # Langsung proses ke engine utama
         await play_music(interaction, cari)
-        # Berikan konfirmasi akhir pada original response
-        await interaction.edit_original_response(content=f"✅ **Tautan diterima:** Memproses permintaan.")
+        # Berikan konfirmasi akhir agar interaksi ditutup dengan rapi
+        await interaction.edit_original_response(content=f"✅ **Tautan diterima:** Memproses metadata audio...")
     
-    # B. LOGIKA JIKA INPUT ADALAH JUDUL (PENCARIAN)
+    # --- [ LOGIKA B: INPUT ADALAH JUDUL (PENCARIAN) ] ---
     else:
         await interaction.followup.send(f"🔍 **Mencari:** `{cari}`...", ephemeral=True)
         try:
-            search_opts = {'extract_flat': True, 'quiet': True}
-            # Menjalankan pencarian di background agar bot tidak freeze
+            # SINKRONISASI KONFIGURASI (Poin 1):
+            # Mengambil YTDL_OPTIONS global dan memodifikasinya sedikit untuk pencarian cepat
+            search_config = YTDL_OPTIONS.copy()
+            search_config['extract_flat'] = True  # Agar pencarian sangat cepat (tidak download info detail tiap lagu)
+            
+            # Menjalankan pencarian di background executor agar bot tidak lag/hang
+            # Menggunakan f"ytsearch5:{cari}" untuk mengambil 5 hasil teratas
             data = await bot.loop.run_in_executor(
-                None, lambda: yt_dlp.YoutubeDL(search_opts).extract_info(f"ytsearch5:{cari}", download=False)
+                None, 
+                lambda: yt_dlp.YoutubeDL(search_config).extract_info(f"ytsearch5:{cari}", download=False)
             )
             
             if not data or 'entries' not in data or len(data['entries']) == 0:
-                return await interaction.edit_original_response(content="❌ **Gagal:** Lagu tidak ditemukan.")
+                return await interaction.edit_original_response(content="❌ **Gagal:** Lagu tidak ditemukan. Coba judul lain.")
             
-            # Tampilkan pilihan lagu (SearchControlView)
-            view = SearchControlView(data['entries'], interaction.user)
+            # Ambil entri pencarian (limit 5)
+            entries = data['entries'][:5]
+            
+            # Panggil UI Dashboard Pencarian (SearchControlView)
+            view = SearchControlView(entries, interaction.user)
+            
+            # Tampilkan pilihan ke user
             q.last_search_msg = await interaction.edit_original_response(
                 content=None, 
                 embed=view.create_embed(), 
@@ -1276,199 +1372,109 @@ async def play(interaction: discord.Interaction, cari: str):
             )
 
         except Exception as e:
-            logger.error(f"Error search: {e}")
-            await interaction.edit_original_response(content="⚠️ Terjadi kesalahan saat sistem mencari lagu.")
-
-
-
+            logger.error(f"Error search system: {e}")
+            await interaction.edit_original_response(
+                content=f"⚠️ **System Error:** Gagal melakukan pencarian. (Cek log konsol/cookies)"
+            )
 
 
 
 #
-#  ⏹️ 7.2.  :	/stop - System 
+# ⏸️ 7.2. : /pause - System (REFINED)
 # ------------------------------------------------------------------------------
 #
-#
-@bot.tree.command(name="stop", description="Mematikan musik dan mengeluarkan bot dari voice channel")
-async def stop_cmd(interaction: discord.Interaction):
+@bot.tree.command(name="pause", description="Jeda musik")
+async def pause_cmd(interaction: discord.Interaction):
     q = get_queue(interaction.guild_id)
     vc = interaction.guild.voice_client
-
-    # --- TAMBAHKAN INI AGAR BAR BERHENTI ---
-    if q.update_task:
-        q.update_task.cancel()
-    # ---------------------------------------
-
-    # Ambil data jumlah antrean sebelum dihapus untuk laporan
-    jumlah_antrean = len(q.queue)
-    
-    if vc:
-        # 1. LOGIKA PEMBERSIHAN MEMORY (SANGAT PENTING)
-        q.queue.clear()
-        q.current_info = None
-        
-        # 2. BERSIHKAN DASHBOARD (Agar tidak ada tombol 'hantu' di chat)
-        if q.last_dashboard:
-            try:
-                await q.last_dashboard.delete()
-            except:
-                pass
-            q.last_dashboard = None
-
-        # 3. PUTUS KONEKSI
-        await vc.disconnect()
-        
-        # 4. BUAT EMBED YANG ESTETIK
-        embed = discord.Embed(
-            title="🛑 SYSTEM TERMINATED",
-            description=(
-                f"✨ **{interaction.user.mention}** telah menghentikan sesi musik.\n\n"
-                f"🧹 **Antrean:** `{jumlah_antrean}` lagu telah dibersihkan.\n"
-                f"📡 **Status:** Bot telah meninggalkan Voice Channel.\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            ),
-            color=0x2f3136 # Warna Dark Grey yang mewah
-        )
-        
-        # Gunakan logo bot sebagai thumbnail
-        embed.set_thumbnail(url="https://i.ibb.co.com/KppFQ6N6/Logo1.gif")
-        
-        # Footer dengan pengaman avatar
-        bot_avatar = bot.user.display_avatar.url if bot.user else None
-        embed.set_footer(text="Sesi berakhir • Angelss Project V17", icon_url=bot_avatar)
-
-        # Kirim respon publik agar semua tahu siapa yang menonaktifkan
-        await interaction.response.send_message(embed=embed, delete_after=20)
-        
-    else:
-        # Respon jika bot memang tidak sedang aktif (ephemeral=True agar tidak nyampah)
-        await interaction.response.send_message(
-            "❌ **Gagal:** Bot tidak sedang berada di Voice Channel.", 
-            ephemeral=True
-        )
-
-
-
-
-
-
-#
-# ⏸️ 7.3.  :	/Resume - System 
-# ------------------------------------------------------------------------------
-#
-#
-@bot.tree.command(name="pause", description="Jeda musik yang sedang diputar")
-async def pause(interaction: discord.Interaction):
-    q = get_queue(interaction.guild_id)
-    vc = interaction.guild.voice_client
-    
     if vc and vc.is_playing():
         vc.pause()
-        if q.update_task: q.update_task.cancel() # STOP bar di sini
-        embed = discord.Embed(description="⏸️ **Musik telah dijeda.**", color=0xf1c40f)
-        await interaction.response.send_message(embed=embed, delete_after=10)
+        q.pause_time = time.time()
+        if q.update_task: q.update_task.cancel()
         
-        # SINKRONISASI TOMBOL DASHBOARD
-        if q.last_dashboard:
-            view = MusicDashboard(interaction.guild_id)
-            await view.update_button(q.last_dashboard)
+        # SINKRONISASI OTOMATIS (Menggunakan Helper Section 6.3)
+        await sync_dashboard_buttons(q.last_dashboard, interaction.guild_id)
+        await interaction.response.send_message(embed=buat_embed_status("⏸️", "Musik dijeda.", 0xf1c40f), delete_after=10)
     else:
-        await interaction.response.send_message("❌ **Gagal:** Tidak ada musik yang sedang berbunyi.", ephemeral=True)
-
-
-
-
+        await interaction.response.send_message("❌ Tidak ada musik berjalan.", ephemeral=True)
 
 
 #
-# ▶️ 7.4.  :	/resume - System
+# ▶️ 7.3. : /resume - System (REFINED)
 # ------------------------------------------------------------------------------
 #
-#
-@bot.tree.command(name="resume", description="Lanjutkan musik yang sedang dijeda")
-async def resume(interaction: discord.Interaction):
+@bot.tree.command(name="resume", description="Lanjut memutar musik")
+async def resume_cmd(interaction: discord.Interaction):
     q = get_queue(interaction.guild_id)
     vc = interaction.guild.voice_client
-    
-    # Validasi: Apakah bot memang sedang dalam kondisi Pause?
     if vc and vc.is_paused():
-        # HITUNG ULANG start_time agar bar sinkron lagi
-            # (Waktu mulai baru = Waktu sekarang - posisi detik terakhir)
         current_pos = time.time() - q.start_time
         q.start_time = time.time() - current_pos
-
         vc.resume()
         
-        # Jalankan ulang mesin bar
-        q.update_task = bot.loop.create_task(
-            update_player_interface(interaction, q.last_dashboard, q.total_duration, q.current_info['title'], q.current_info['webpage_url'], q.current_info['thumbnail'], interaction.user, interaction.guild_id)
-        )
+        # JALANKAN ULANG ENGINE UPDATE
+        if q.last_dashboard and q.current_info:
+            q.update_task = bot.loop.create_task(
+                update_player_interface(q.last_dashboard, q.total_duration, q.current_info['title'], q.current_info['webpage_url'], q.current_info['thumbnail'], interaction.user, interaction.guild_id)
+            )
         
-        embed = discord.Embed(description="▶️ **Musik dilanjutkan kembali.**", color=0x2ecc71)
-        await interaction.response.send_message(embed=embed, delete_after=10)
-        
-        # SINKRONISASI DASHBOARD
-        if q.last_dashboard:
-            view = MusicDashboard(interaction.guild_id)
-            await view.update_button(q.last_dashboard)
+        # SINKRONISASI TOMBOL
+        await sync_dashboard_buttons(q.last_dashboard, interaction.guild_id)
+        await interaction.response.send_message(embed=buat_embed_status("▶️", "Musik dilanjutkan.", 0x2ecc71), delete_after=10)
     else:
-        # Jika bot tidak pause, beri tahu user alasannya
-        status = "sedang berjalan" if vc and vc.is_playing() else "tidak ada lagu"
-        await interaction.response.send_message(f"❌ **Gagal:** Musik {status}.", ephemeral=True)
-
+        await interaction.response.send_message("❌ Musik tidak sedang dijeda.", ephemeral=True)
 
 
 
 
 
 #
-# ⏭️ 7.5.  :	/skip - System
+# ⏭️ 7.4.  :	/skip - System (FINAL STABLE VERSION)
 # ------------------------------------------------------------------------------
 #
 #
 @bot.tree.command(name="skip", description="Lewati lagu yang sedang berjalan")
 async def skip_cmd(interaction: discord.Interaction):
-    # 1. Defer agar tidak timeout
+    # 1. Defer wajib agar bot punya waktu bernapas saat koneksi lemot
     await interaction.response.defer(ephemeral=False)
     
     q = get_queue(interaction.guild_id)
     vc = interaction.guild.voice_client
     
-            
-        
-    # --- TAMBAHKAN INI AGAR BAR BERHENTI ---
-    if q.update_task:
-        q.update_task.cancel()
-    # ---------------------------------------
-
     if vc and (vc.is_playing() or vc.is_paused()):
-        # 2. Logika Pengambilan Judul 
-        lagu_dilewati = "Lagu saat ini"
-        if q.current_info:
-            lagu_dilewati = q.current_info.get('title', 'Tidak diketahui')
-        elif q.last_dashboard and q.last_dashboard.embeds:
-            try:
-                full_desc = q.last_dashboard.embeds[0].description
-                if "[" in full_desc and "]" in full_desc:
-                    lagu_dilewati = full_desc.split('[')[1].split(']')[0]
-            except: pass
+        # --- 2. LOGIKA PENGAMAN LOOP ---
+        # Simpan status loop asli user
+        original_loop = q.loop
+        # Matikan loop paksa agar after_playing() memanggil lagu selanjutnya, bukan mengulang
+        q.loop = False
 
-        # 3. Info Antrean Berikutnya
+        # --- 3. MATIKAN ENGINE UPDATE ---
+        if q.update_task:
+            q.update_task.cancel()
+
+        # --- 4. IDENTIFIKASI LAGU (Untuk Visual) ---
+        lagu_dilewati = "Lagu tidak diketahui"
+        if q.current_info:
+            lagu_dilewati = q.current_info.get('title', 'Lagu saat ini')
+        
+        # Cek apa ada lagu berikutnya di antrean
         if q.queue:
             next_info = f"⏭️ **Selanjutnya:** `{q.queue[0]['title']}`"
         else:
             next_info = "Antrean kosong, bot akan standby. ✨"
 
-        # 4. PAKAI FUNGSI EMBED YANG SUDAH KITA BUAT
-        embed = buat_embed_skip(interaction.user, lagu_dilewati, next_info)
-
-        # 5. EKSEKUSI SKIP
+        # --- 5. EKSEKUSI PEMUTUSAN AUDIO ---
+        # vc.stop() akan memicu fungsi 'after_playing' yang ada di start_stream secara otomatis
         vc.stop()
         
-        # Kirim notifikasi skip
+        # Kembalikan status loop asli untuk lagu berikutnya nanti
+        q.loop = original_loop
+
+        # --- 6. KIRIM EMBED NOTIFIKASI ---
+        embed = buat_embed_skip(interaction.user, lagu_dilewati, next_info)
         skip_msg = await interaction.followup.send(embed=embed)
         
-        # 6. BERSIHKAN PESAN
+        # Bersihkan pesan skip setelah 15 detik agar chat tidak penuh sampah
         await asyncio.sleep(15)
         try:
             await skip_msg.delete()
@@ -1476,18 +1482,42 @@ async def skip_cmd(interaction: discord.Interaction):
             pass
             
     else:
-        await interaction.followup.send("❌ **Gagal:** Tidak ada lagu yang sedang diputar.", ephemeral=True)
-
+        # Jika bot sedang diam (idle)
+        await interaction.followup.send("❌ **Gagal:** Tidak ada lagu yang sedang diputar untuk dilewati.", ephemeral=True)
 
 
 
 
 
 #
-# 🎛️ 7.6.  :	/volume - System 
+# 🔂 7.5.  :	/loop - System
 # ------------------------------------------------------------------------------
 #
 #
+@bot.tree.command(name="loop", description="Aktifkan atau matikan pengulangan lagu saat ini")
+async def loop_cmd(interaction: discord.Interaction):
+    q = get_queue(interaction.guild_id)
+    q.loop = not q.loop
+    
+    # Ambil judul lagu untuk dimasukkan ke embed
+    judul = q.current_info.get('title', 'Lagu saat ini') if q.current_info else "Musik"
+    
+    # PANGGIL FUNGSI 4.7 TADI
+    emb = buat_embed_loop(interaction.user, q.loop, judul)
+    
+    # Kirim respon
+    await interaction.response.send_message(embed=emb, delete_after=15)
+
+
+
+
+
+#
+# 🔊 7.6.  :	/volume - System
+# ------------------------------------------------------------------------------
+#
+#
+
 @bot.tree.command(name="volume", description="Atur Volume Audio (0-100%)")
 @app_commands.describe(persen="Masukkan angka antara 0 sampai 100")
 async def volume(interaction: discord.Interaction, persen: int):
@@ -1495,48 +1525,25 @@ async def volume(interaction: discord.Interaction, persen: int):
     vc = interaction.guild.voice_client
     
     if 0 <= persen <= 100:
-        # 1. Update Memory & Engine
+        # 1. Update Engine
         q.volume = persen / 100
         if vc and vc.source:
-            try:
-                vc.source.volume = q.volume
-            except AttributeError:
-                pass
+            try: vc.source.volume = q.volume
+            except: pass
             
-        # 2. Logika Warna & Status
-        if persen > 80:
-            warna_embed, status_teks = 0xe74c3c, "⚠️ Volume Tinggi"
-        elif persen > 50:
-            warna_embed, status_teks = 0xf1c40f, "🔉 Volume Sedang"
-        else:
-            warna_embed, status_teks = 0x3498db, "🔈 Volume Standar"
-        
-        # 3. Visual Bar
-        bar = "▰" * (persen // 10) + "▱" * (10 - (persen // 10))
-        
-        # 4. SINKRONISASI KE DASHBOARD
+        # 2. Sinkronisasi ke Dashboard (Jika ada)
+        # Kita update field Volume di dashboard yang sedang aktif
         if q.last_dashboard:
             try:
-                current_embed = q.last_dashboard.embeds[0]
-                current_embed.set_field_at(1, name="🔊 Volume", value=f"`{persen}%`", inline=True)
-                await q.last_dashboard.edit(embed=current_embed)
-            except:
-                pass
+                emb_dash = q.last_dashboard.embeds[0]
+                # Cari field volume dan update (pastikan index-nya benar)
+                emb_dash.set_field_at(1, name="🔊 Volume", value=f"`{persen}%`", inline=True)
+                await q.last_dashboard.edit(embed=emb_dash)
+            except: pass
 
-        # 5. Kirim Respon Konfirmasi
-        embed = discord.Embed(
-            title="🎚️ Audio Mixer Console",
-            description=(
-                f"**Status:** {status_teks}\n"
-                f"**Level:** `{persen}%` / `100%` \n"
-                f"`{bar}`\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            ),
-            color=warna_embed
-        )
-        embed.set_footer(text=f"Requested by {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
-        
-        await interaction.response.send_message(embed=embed, delete_after=15)
+        # 3. Panggil Pabrik & Kirim
+        embed_rapi = buat_embed_volume(persen, interaction.user)
+        await interaction.response.send_message(embed=embed_rapi, delete_after=15)
         
     else:
         await interaction.response.send_message("❌ **Gagal:** Gunakan angka **0 - 100**.", ephemeral=True)
@@ -1551,20 +1558,58 @@ async def volume(interaction: discord.Interaction, persen: int):
 # ------------------------------------------------------------------------------
 #
 #
-@bot.tree.command(name="queue", description="Lihat antrean dan pilih lagu untuk dilompati")
+@bot.tree.command(name="queue", description="Lihat daftar lagu yang akan diputar")
 async def queue_cmd(interaction: discord.Interaction):
-    # 1. Defer dulu
-    await interaction.response.defer(ephemeral=False)
-    
-    try:
-        # 2. Panggil fungsi dashboard yang sudah kita buat
-        view = MusicDashboard(interaction.guild_id)
-        await view.tampilkan_antrean(interaction)
+    # Memanggil fungsi pusat di Section 6.7
+    await logic_tampilkan_antrean(interaction, interaction.guild_id)
+
+
+
+
+
+
+
+
+#
+#  ⏹️ 7.8.  :	/stop - System 
+# ------------------------------------------------------------------------------
+#
+#
+@bot.tree.command(name="stop", description="Mematikan musik dan mengeluarkan bot dari voice channel")
+async def stop_cmd(interaction: discord.Interaction):
+    q = get_queue(interaction.guild_id)
+    vc = interaction.guild.voice_client
+
+    # 1. Matikan update progress bar jika ada
+    if q.update_task:
+        q.update_task.cancel()
+
+    if vc:
+        # 2. Ambil jumlah antrean untuk laporan sebelum dibersihkan
+        jumlah_antrean = len(q.queue)
         
-    except Exception as e:
-        print(f"Error pada command /queue: {e}")
-        await interaction.followup.send(
-            "⚠️ Terjadi kendala saat memuat antrean. Pastikan bot sedang aktif.", 
+        # 3. Logika Pembersihan
+        q.queue.clear()
+        q.current_info = None
+        
+        if q.last_dashboard:
+            try: await q.last_dashboard.delete()
+            except: pass
+            q.last_dashboard = None
+
+        # 4. Putus Koneksi
+        await vc.disconnect()
+        
+        # 5. PANGGIL PABRIK EMBED (Lebih Rapi!)
+        # Kita panggil def yang sudah kita buat tadi di Section Central Embed
+        embed_rapi = buat_embed_stop(interaction.user, jumlah_antrean)
+        
+        # 6. Kirim Respon
+        await interaction.response.send_message(embed=embed_rapi, delete_after=20)
+        
+    else:
+        await interaction.response.send_message(
+            "❌ **Gagal:** Bot tidak sedang berada di Voice Channel.", 
             ephemeral=True
         )
 
@@ -1573,8 +1618,9 @@ async def queue_cmd(interaction: discord.Interaction):
 
 
 
+
 #
-# 🚪 7.8.  :	GROUPING /voice |	Masuk & Keluar 
+# 🚪 7.9.  :	GROUPING /voice |	Masuk & Keluar 
 # ------------------------------------------------------------------------------
 #
 #
@@ -1583,7 +1629,7 @@ voice_group = app_commands.Group(name="voice", description="Kontrol koneksi bot 
 
 
 #
-# 📥 7.9.  :	/voice Masuk - System 
+# 📥 7.9.1.  :	/voice Masuk - System 
 # ------------------------------------------------------------------------------
 #
 #
@@ -1623,7 +1669,7 @@ async def masuk(interaction: discord.Interaction):
 
 
 #
-# 📥 7.9.  :	/voice Keluar - System 
+# 📥 7.9.2.  :	/voice Keluar - System 
 # ------------------------------------------------------------------------------
 #
 #
@@ -1666,8 +1712,13 @@ async def keluar(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Aku sedang tidak berada di dalam Voice Channel.", ephemeral=True)
 
 
+
+
+
+
+
 #
-# 📤 7.9.1.  :	daftarkan Voice Group 
+# 📤 7.9.3.  :	daftarkan Voice Group 
 # ------------------------------------------------------------------------------
 #
 #
@@ -1679,7 +1730,7 @@ bot.tree.add_command(voice_group)
 
 
 #
-# 💡 7.9.2.  :	/help - System
+# 💡 7.9.4.  :	/help - System
 # ------------------------------------------------------------------------------
 #
 #
@@ -1755,7 +1806,7 @@ async def help_cmd(interaction: discord.Interaction):
 
 
 #
-# 🛠️ 7.9.3.  :	/debug - Syatem
+# 🛠️ 7.9.5.  :	/debug - Syatem
 # ------------------------------------------------------------------------------
 #
 #
@@ -1816,12 +1867,47 @@ async def debug_system(interaction: discord.Interaction):
 
 
 
-
-
-
-
-
 # --- [ 8 ] ---
+#
+# ==============================================================================
+#			[ GLOBAL ERROR HANDLER - THE SAFETY NET ]
+# ==============================================================================
+
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    """Menangkap semua error slash command agar bot tidak terlihat 'mati' saat error."""
+    
+    if isinstance(error, app_commands.CommandOnCooldown):
+        return await interaction.response.send_message(
+            f"⏳ **Sabar kii!** Perintah ini sedang cooldown. Coba lagi dalam `{error.retry_after:.1f}` detik.", 
+            ephemeral=True
+        )
+    
+    elif isinstance(error, app_commands.MissingPermissions):
+        return await interaction.response.send_message(
+            "🚫 **Akses Ditolak:** Kamu tidak punya izin untuk melakukan ini.", 
+            ephemeral=True
+        )
+
+    # Error umum (misal: Youtube 403, FFmpeg mati, dll)
+    logger.error(f"Global Error Caught: {error}")
+    
+    msg = "⚠️ **Terjadi kesalahan internal.**\n"
+    if "403" in str(error):
+        msg += "Info: YouTube memblokir akses (403). Coba update cookies atau ganti judul lagu."
+    else:
+        msg += f"Detail: `{str(error)[:100]}...`"
+
+    if interaction.response.is_done():
+        await interaction.followup.send(msg, ephemeral=True)
+    else:
+        await interaction.response.send_message(msg, ephemeral=True)
+
+
+
+
+
+# --- [ 9 ] ---
 #
 # ==============================================================================
 #			[ BOOTLOADER ]
@@ -1829,7 +1915,7 @@ async def debug_system(interaction: discord.Interaction):
 
 
 #
-# 🚀 8.1 :	
+# 🚀 9.1 :	
 # ------------------------------------------------------------------------------
 #
 #
