@@ -473,6 +473,107 @@ async def update_player_interface(interaction, message, total_duration, title, u
 
 
 
+#
+# 🏗️ 6.1.  :	Class Modern Bot & Notification Online System - PINDAH - KE SINI - Akar utama 
+# ------------------------------------------------------------------------------
+#
+#
+class ModernBot(commands.Bot):
+    def __init__(self):
+        # Setup dasar bot dengan intents lengkap untuk musik
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.voice_states = True
+        
+        super().__init__(
+            command_prefix="!", 
+            intents=intents,
+            help_command=None
+        )
+
+    async def setup_hook(self):
+        """Sinkronisasi command saat bot start dengan error handling."""
+        try:
+            # SINKRONISASI GLOBAL (Wajib agar /command muncul)
+            synced = await self.tree.sync()
+            logger.info(f"✅ Berhasil sinkronisasi {len(synced)} slash commands secara global.")
+        except Exception as e:
+            logger.error(f"❌ Gagal sinkronisasi command: {e}")
+
+    async def on_ready(self):
+        """Event saat bot sudah online sepenuhnya dengan sistem pengaman hosting."""
+        # 1. Set Status Bot (Listening Mode)
+        activity = discord.Activity(
+            type=discord.ActivityType.listening, 
+            name="/play | Angelss V17"
+        )
+        await self.change_presence(status=discord.Status.online, activity=activity)
+
+        # 2. Logika Kirim Pesan Online (DIBUNGKUS TRY-EXCEPT AGAR TIDAK CRASH)
+        target_channel_id = 1456250414638043169 
+        
+        try:
+            channel = self.get_channel(target_channel_id)
+            
+            if channel:
+                # Membersihkan log lama (Dibatasi 10 pesan agar RAM hosting tidak bengkak)
+                try:
+                    async for message in channel.history(limit=10):
+                        if message.author == self.user:
+                            await message.delete()
+                except Exception as e:
+                    logger.warning(f"Gagal menghapus pesan lama: {e}")
+
+                # --- [ TETAP MENGGUNAKAN EMBED ASLI KAMU ] ---
+                embed = discord.Embed(
+                    title="🚀 SYSTEM RELOADED & UPDATED",
+                    description=(
+                        "**Bot telah online dan berhasil diperbarui!**\n"
+                        "Seluruh engine audio telah dioptimalkan untuk Python 3.10 dan FFmpeg v5.0."
+                    ),
+                    color=0x2ecc71 
+                )
+                embed.set_thumbnail(url="https://i.ibb.co.com/KppFQ6N6/Logo1.gif")
+                
+                # Info Statistik
+                latensi = round(self.latency * 1000) if self.latency else "---"
+                embed.add_field(name="🛰️ Cluster", value="`Jakarta-ID`", inline=True)
+                embed.add_field(name="⚡ Latency", value=f"`{latensi}ms`", inline=True)
+                embed.add_field(name="📡 Engine", value="`FFmpeg 5.0`", inline=True)
+                embed.add_field(name="💡 Guide", value="Ketik `/play` atau `/help` untuk bantuan", inline=False)
+                
+                # Timestamp WIB
+                waktu_sekarang = datetime.datetime.now().strftime('%d/%m/%Y %H:%M')
+                embed.add_field(name="📅 System Ready", value=f"`{waktu_sekarang} WIB`", inline=False)
+
+                embed.set_footer(
+                    text="Angelss Project Final Fix • Powered by ikiii", 
+                    icon_url=self.user.display_avatar.url
+                )
+                embed.set_image(url="https://i.getpantry.cloud/apf/help_banner.gif") 
+                
+                await channel.send(embed=embed)
+            else:
+                # Jika channel ID salah/tidak ditemukan, bot tidak crash, hanya log saja
+                logger.warning(f"⚠️ Channel ID {target_channel_id} tidak ditemukan. Melewati pesan online.")
+                
+        except Exception as e:
+            logger.error(f"⚠️ Gagal menjalankan fungsi on_ready: {e}")
+        
+        # 3. Print Console Log (Standard Output untuk Pterodactyl Panel)
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print(f"✅ SYSTEM ONLINE - NOTIFICATION : {self.user.name}")
+        print(f"🐍 PYTHON VER  : 3.10.x")
+        print(f"📡 LATENCY     : {round(self.latency * 1000)}ms")
+        print(f"📅 STARTED AT  : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+# Inisialisasi Instance Bot
+bot = ModernBot()
+
+
+
+
 
 # --- [ 5 ] ---
 #
@@ -734,103 +835,6 @@ async def play_music(interaction, url):
 
 
 
-#
-# 🏗️ 6.1.  :	Class Modern Bot & Notification Online System 
-# ------------------------------------------------------------------------------
-#
-#
-class ModernBot(commands.Bot):
-    def __init__(self):
-        # Setup dasar bot dengan intents lengkap untuk musik
-        intents = discord.Intents.default()
-        intents.message_content = True
-        intents.voice_states = True
-        
-        super().__init__(
-            command_prefix="!", 
-            intents=intents,
-            help_command=None
-        )
-
-    async def setup_hook(self):
-        """Sinkronisasi command saat bot start dengan error handling."""
-        try:
-            # SINKRONISASI GLOBAL (Wajib agar /command muncul)
-            synced = await self.tree.sync()
-            logger.info(f"✅ Berhasil sinkronisasi {len(synced)} slash commands secara global.")
-        except Exception as e:
-            logger.error(f"❌ Gagal sinkronisasi command: {e}")
-
-    async def on_ready(self):
-        """Event saat bot sudah online sepenuhnya dengan sistem pengaman hosting."""
-        # 1. Set Status Bot (Listening Mode)
-        activity = discord.Activity(
-            type=discord.ActivityType.listening, 
-            name="/play | Angelss V17"
-        )
-        await self.change_presence(status=discord.Status.online, activity=activity)
-
-        # 2. Logika Kirim Pesan Online (DIBUNGKUS TRY-EXCEPT AGAR TIDAK CRASH)
-        target_channel_id = 1456250414638043169 
-        
-        try:
-            channel = self.get_channel(target_channel_id)
-            
-            if channel:
-                # Membersihkan log lama (Dibatasi 10 pesan agar RAM hosting tidak bengkak)
-                try:
-                    async for message in channel.history(limit=10):
-                        if message.author == self.user:
-                            await message.delete()
-                except Exception as e:
-                    logger.warning(f"Gagal menghapus pesan lama: {e}")
-
-                # --- [ TETAP MENGGUNAKAN EMBED ASLI KAMU ] ---
-                embed = discord.Embed(
-                    title="🚀 SYSTEM RELOADED & UPDATED",
-                    description=(
-                        "**Bot telah online dan berhasil diperbarui!**\n"
-                        "Seluruh engine audio telah dioptimalkan untuk Python 3.10 dan FFmpeg v5.0."
-                    ),
-                    color=0x2ecc71 
-                )
-                embed.set_thumbnail(url="https://i.ibb.co.com/KppFQ6N6/Logo1.gif")
-                
-                # Info Statistik
-                latensi = round(self.latency * 1000) if self.latency else "---"
-                embed.add_field(name="🛰️ Cluster", value="`Jakarta-ID`", inline=True)
-                embed.add_field(name="⚡ Latency", value=f"`{latensi}ms`", inline=True)
-                embed.add_field(name="📡 Engine", value="`FFmpeg 5.0`", inline=True)
-                embed.add_field(name="💡 Guide", value="Ketik `/play` atau `/help` untuk bantuan", inline=False)
-                
-                # Timestamp WIB
-                waktu_sekarang = datetime.datetime.now().strftime('%d/%m/%Y %H:%M')
-                embed.add_field(name="📅 System Ready", value=f"`{waktu_sekarang} WIB`", inline=False)
-
-                embed.set_footer(
-                    text="Angelss Project Final Fix • Powered by ikiii", 
-                    icon_url=self.user.display_avatar.url
-                )
-                embed.set_image(url="https://i.getpantry.cloud/apf/help_banner.gif") 
-                
-                await channel.send(embed=embed)
-            else:
-                # Jika channel ID salah/tidak ditemukan, bot tidak crash, hanya log saja
-                logger.warning(f"⚠️ Channel ID {target_channel_id} tidak ditemukan. Melewati pesan online.")
-                
-        except Exception as e:
-            logger.error(f"⚠️ Gagal menjalankan fungsi on_ready: {e}")
-        
-        # 3. Print Console Log (Standard Output untuk Pterodactyl Panel)
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print(f"✅ SYSTEM ONLINE - NOTIFICATION : {self.user.name}")
-        print(f"🐍 PYTHON VER  : 3.10.x")
-        print(f"📡 LATENCY     : {round(self.latency * 1000)}ms")
-        print(f"📅 STARTED AT  : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-# Inisialisasi Instance Bot
-bot = ModernBot()
 
 
 
@@ -1397,7 +1401,7 @@ async def resume(interaction: discord.Interaction):
         
         # Jalankan ulang mesin bar
         q.update_task = bot.loop.create_task(
-            update_player_interface(interaction, q.last_dashboard, q.total_duration, q.current_info['title'], q.current_info['webpage_url'], q.current_info['thumbnail'], interaction.user)
+            update_player_interface(interaction, q.last_dashboard, q.total_duration, q.current_info['title'], q.current_info['webpage_url'], q.current_info['thumbnail'], interaction.user, interaction.guild_id)
         )
         
         embed = discord.Embed(description="▶️ **Musik dilanjutkan kembali.**", color=0x2ecc71)
