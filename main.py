@@ -210,31 +210,30 @@ YTDL_OPTIONS = {
 
 
 #
-# 🔊 3.2: AUDIO SIGNAL & STREAMING OPTIONS
+# 🔊 3.2: AUDIO SIGNAL & STREAMING OPTIONS (STABLE RECONNECT)
 # ------------------------------------------------------------------------------
-#
 #
 FFMPEG_OPTIONS = {
     'before_options': (
         '-reconnect 1 '
         '-reconnect_streamed 1 '
         '-reconnect_delay_max 5 '
-        '-reconnect_at_eof 1 '
+        '-reconnect_at_eof 1 ' # Mencegah skip jika koneksi putus di akhir lagu
         '-nostdin '
-        '-ss 00:00:00 '  # <--- PAKSA mulai dari detik 0
+        '-ss 00:00:00 '
         '-threads 2'
     ),
     'options': (
         '-vn '
         '-nostats '
         '-loglevel warning '
-        '-bufsize 1024k ' # Kecilkan sedikit agar start-up lebih cepat (snappy)
-        # --- THE FIX START FILTER ---
-        # Kita tambahkan 'aresample=async=1000' khusus di awal untuk 
-        # mengejar ketertinggalan timestamp saat pertama kali connect.
-        '-af "asetpts=PTS-STARTPTS,aresample=async=1000:min_hard_comp=0.01,loudnorm=I=-11:TP=-1.0:LRA=9,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
+        '-bufsize 2048k ' # Buffer lebih besar untuk koneksi tidak stabil
+        # Filter aresample=async=1 menjaga sinkronisasi audio jika terjadi reconnect
+        '-af "asetpts=PTS-STARTPTS,aresample=async=1:min_hard_comp=0.01,loudnorm=I=-11:TP=-1.0:LRA=9,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
     ),
 }
+
+
 
 
 
@@ -252,18 +251,14 @@ ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
 
 
 
+
 #
-# 📜 3.4 :	Class QUEUE System | DATA MODEL & QUEUE SYSTEM (DATABASE MEMORY) 🧠
+# 📜 3.4 : Class QUEUE System | DATA MODEL & QUEUE SYSTEM (DATABASE MEMORY)
 # ------------------------------------------------------------------------------
-#
-# 				  Catatan :
-#										Ditaruh di sini agar terbaca oleh Function Helper di bawah - ( PENTING )
-#
 #
 queues = {} 
 
 class MusicQueue:
-    """Objek untuk menyimpan data musik spesifik per server (Guild)."""
     def __init__(self):
         self.queue = deque()
         self.current_info = None
@@ -276,13 +271,15 @@ class MusicQueue:
         self.update_task = None    
         self.start_time = 0        
         self.total_duration = 0    
+        self.pause_time = 0
+        # --- [ ANTI-DOUBLE PLAY LOCK ] ---
+        self.lock = asyncio.Lock() 
 
     def clear_all(self):
         self.queue.clear()
         self.current_info = None
-        self.last_dashboard = None
-        self.last_search_msg = None
-        self.last_queue_msg = None
+        if self.update_task:
+            self.update_task.cancel()
 
 def get_queue(guild_id):
     if guild_id not in queues:
@@ -291,9 +288,6 @@ def get_queue(guild_id):
 
 def delete_queue(guild_id):
     if guild_id in queues:
-        # Hapus task jika masih jalan sebelum menghapus data
-        if queues[guild_id].update_task:
-            queues[guild_id].update_task.cancel()
         del queues[guild_id]
 
  
@@ -1078,31 +1072,76 @@ class MusicDashboard(discord.ui.View):
 
 
 
+
 #
-# ⏱️ 6.1.  :	Funstion asynce def  system auto update bar and durasi per 3 detik	| sengaja fungsi ini aku taruh di def Function agar sinkron dengan progress bar nya 
+# ⏱️ 6.1. : Function asynce def system auto update bar and durasi (ANTI-ZOMBIE)
 # ------------------------------------------------------------------------------
 #
-#
 async def update_player_interface(message, duration, title, url, thumbnail, user, guild_id):
+    """
+    Update progress bar setiap detik. 
+    Dilengkapi sistem pengaman agar tidak membebani RAM (Anti-Zombie).
+    """
     q = get_queue(guild_id)
-    while not bot.is_closed():
-        vc = message.guild.voice_client
-        if not vc or not (vc.is_playing() or vc.is_paused()):
-            break
+    
+    try:
+        # Loop akan berjalan selama bot online
+        while not bot.is_closed():
+            vc = message.guild.voice_client
             
-        if vc.is_paused():
-            elapsed_time = q.pause_time - q.start_time if hasattr(q, 'pause_time') else time.time() - q.start_time
-        else:
-            elapsed_time = time.time() - q.start_time
-            
-        elapsed_time = max(0, min(elapsed_time, duration))
+            # --- [ PENGAMAN 1: Kondisi Audio ] ---
+            # Jika bot keluar VC atau lagu sudah beneran berhenti, hentikan task ini.
+            if not vc or not (vc.is_playing() or vc.is_paused()):
+                logger.info(f"Task Update di Guild {guild_id} dihentikan: Audio diam.")
+                break
+                
+            # --- [ PENGAMAN 2: Sinkronisasi Dashboard ] ---
+            # Jika pesan dashboard yang kita pegang (message.id) ternyata sudah 
+            # bukan dashboard yang terdaftar di antrean (q.last_dashboard.id),
+            # artinya sudah ada lagu baru atau dashboard baru. Matikan task lama ini.
+            if q.last_dashboard and message.id != q.last_dashboard.id:
+                logger.info(f"Task Update lama di Guild {guild_id} dimatikan (Dashboard diganti).")
+                break
 
-        try:
-            embed = buat_embed_dashboard(q, elapsed_time, duration, title, url, thumbnail, user)
-            await message.edit(embed=embed) # View tidak perlu di-update terus menerus, cukup Embed
-        except Exception:
-            break
-        await asyncio.sleep(1)
+            # --- [ LOGIKA HITUNG WAKTU ] ---
+            # Jika sedang jeda (Pause), gunakan waktu saat tombol jeda ditekan
+            if vc.is_paused():
+                elapsed_time = q.pause_time - q.start_time if hasattr(q, 'pause_time') else time.time() - q.start_time
+            else:
+                elapsed_time = time.time() - q.start_time
+                
+            # Pastikan waktu tidak melebihi durasi total atau kurang dari 0
+            elapsed_time = max(0, min(elapsed_time, duration))
+
+            try:
+                # Rakit kembali Embed dengan data terbaru (Progress bar baru)
+                embed = buat_embed_dashboard(q, elapsed_time, duration, title, url, thumbnail, user)
+                
+                # Edit pesan dashboard
+                await message.edit(embed=embed)
+                
+            except discord.NotFound:
+                # Jika pesan dashboard dihapus paksa oleh user/admin, matikan task ini
+                break
+            except Exception as e:
+                # Jika ada error internet saat update, biarkan loop lanjut ke detik berikutnya
+                logger.warning(f"Gagal update embed dashboard di {guild_id}: {e}")
+                pass
+            
+            # Jeda update (Setel ke 1 detik agar visual bar smooth)
+            # Jika hosting berat, naikkan ke 2 atau 3 detik.
+            await asyncio.sleep(1)
+
+    except asyncio.CancelledError:
+        # Ini akan terpicu saat kita memanggil q.update_task.cancel() di perintah /skip atau /stop
+        logger.info(f"Task Update di Guild {guild_id} berhasil di-cancel secara paksa.")
+        raise # Tetap lempar agar asyncio tahu task sudah bersih
+    except Exception as e:
+        logger.error(f"Error Kritis pada Update Interface: {e}")
+    finally:
+        # Pintu keluar terakhir: Pastikan log mencatat task ini sudah mati
+        pass
+
 
 
 
@@ -1210,11 +1249,13 @@ async def sync_dashboard_buttons(message, guild_id):
 
 
 
+
 #
-# 📡 6.4 : MESIN UTAMA - START STREAM
+# 📡 6.4 : MESIN UTAMA - START STREAM (ULTIMATE STABLE COMBINED)
 # ------------------------------------------------------------------------------
 #
 async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
+    # 1. Identifikasi Guild & Queue
     g_id = interaction.guild.id if interaction else guild_id_manual
     if not g_id: return
     
@@ -1223,61 +1264,116 @@ async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
 
     guild = bot.get_guild(g_id)
     vc = guild.voice_client if guild else None
-    if not vc: return
+    
+    # --- [ HANDLING VOICE SERVER GHOSTING ] ---
+    if vc:
+        if not vc.is_connected() or vc.channel is None:
+            logger.warning(f"Detected Ghosting in Guild {g_id}. Resetting connection...")
+            try:
+                await vc.disconnect(force=True)
+                await asyncio.sleep(1)
+                vc = None 
+            except: pass
 
-    if q.update_task: q.update_task.cancel()
+    if not vc:
+        logger.error(f"Bot tidak terdeteksi di VC pada Guild {g_id}")
+        return
 
-    try:
-        data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
-        if 'entries' in data: data = data['entries'][0]
-        q.current_info = data
-        
-        stream_url = data.get('url')
-        q.total_duration = data.get('duration', 0)
-        
-        ffmpeg_before = FFMPEG_OPTIONS['before_options']
-        if seek_time: 
-            ffmpeg_before += f" -ss {seek_time}"
+    # --- [ POINT 1: LOCK SYSTEM (Anti-Double Play) ] ---
+    async with q.lock:
+        # --- [ POINT 2: STOP OLD TASK (Anti-Zombie) ] ---
+        if q.update_task:
+            q.update_task.cancel()
 
-        # --- FIX: Pastikan ini sejajar di dalam blok TRY ---
-        audio_source = discord.FFmpegPCMAudio(stream_url, before_options=ffmpeg_before, options=FFMPEG_OPTIONS['options'])
-        source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
+        try:
+            # Ambil data metadata di background
+            def fetch_info():
+                with yt_dlp.YoutubeDL(YTDL_OPTIONS) as ydl:
+                    return ydl.extract_info(url, download=False)
 
-        def after_playing(error):
-            if error: logger.error(f"Player Error: {error}")
-            if q.update_task: bot.loop.call_soon_threadsafe(q.update_task.cancel)
+            data = await bot.loop.run_in_executor(None, fetch_info)
+            if 'entries' in data: data = data['entries'][0]
             
-            if q.loop:
-                bot.loop.create_task(start_stream(None, q.current_info['webpage_url'], guild_id_manual=g_id))
-            else:
-                bot.loop.create_task(next_logic(g_id))
-        
-        await asyncio.sleep(1.5) 
-
-        if vc.is_playing(): 
-            vc.stop()
+            # --- [ POINT 4: METADATA & FORMAT SAFETY ] ---
+            q.current_info = data
+            stream_url = data.get('url') # Coba ambil URL langsung
             
-        vc.play(source, after=after_playing)
-        
-        q.start_time = time.time() - (float(seek_time) if seek_time else 0)
-        
-        channel = bot.get_channel(q.text_channel_id)
-        if channel:
-            penerbit = interaction.user if interaction else bot.user
-            emb = buat_embed_dashboard(q, float(seek_time or 0), q.total_duration, data['title'], data['webpage_url'], data.get('thumbnail'), penerbit)
+            # Jika URL utama tidak ada (fallback ke formats)
+            if not stream_url:
+                formats = data.get('formats', [])
+                for f in formats:
+                    if f.get('url') and (f.get('abr') or f.get('vcodec') == 'none'):
+                        stream_url = f.get('url')
+                        break
             
-            if q.last_dashboard:
-                try: await q.last_dashboard.delete()
-                except: pass
+            if not stream_url:
+                raise Exception("Tidak dapat menemukan URL streaming yang valid")
 
-            q.last_dashboard = await channel.send(embed=emb, view=MusicDashboard(g_id))
-            q.update_task = bot.loop.create_task(
-                update_player_interface(q.last_dashboard, q.total_duration, data['title'], data['webpage_url'], data.get('thumbnail'), penerbit, g_id)
+            q.total_duration = data.get('duration') or 0
+            
+            # --- [ POINT 3: FFMPEG CONFIG (Stable Reconnect) ] ---
+            ffmpeg_before = FFMPEG_OPTIONS['before_options']
+            if seek_time: 
+                ffmpeg_before += f" -ss {seek_time}"
+
+            audio_source = discord.FFmpegPCMAudio(
+                stream_url, 
+                before_options=ffmpeg_before, 
+                options=FFMPEG_OPTIONS['options']
             )
+            source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
 
-    except Exception as e:
-        logger.error(f"Stream Error: {e}")
-        bot.loop.create_task(next_logic(g_id))
+            # --- AFTER PLAYING LOGIC ---
+            def after_playing(error):
+                if error: logger.error(f"Player Error: {error}")
+                # Hentikan progress bar saat lagu habis
+                if q.update_task: 
+                    bot.loop.call_soon_threadsafe(q.update_task.cancel)
+                
+                if q.loop:
+                    bot.loop.create_task(start_stream(None, q.current_info['webpage_url'], guild_id_manual=g_id))
+                else:
+                    bot.loop.create_task(next_logic(g_id))
+            
+            # Eksekusi Pemutaran
+            if vc.is_playing() or vc.is_paused(): 
+                vc.stop()
+            
+            await asyncio.sleep(0.5) # Jeda stabilitas engine
+            vc.play(source, after=after_playing)
+            
+            # Sinkronisasi Waktu untuk Progress Bar
+            q.start_time = time.time() - (float(seek_time) if seek_time else 0)
+            
+            # --- UI UPDATE & TASK MANAGEMENT ---
+            channel = bot.get_channel(q.text_channel_id)
+            if channel:
+                penerbit = interaction.user if interaction else bot.user
+                emb = buat_embed_dashboard(q, float(seek_time or 0), q.total_duration, 
+                                         data['title'], data['webpage_url'], 
+                                         data.get('thumbnail'), penerbit)
+                
+                if q.last_dashboard:
+                    try: await q.last_dashboard.delete()
+                    except: pass
+
+                q.last_dashboard = await channel.send(embed=emb, view=MusicDashboard(g_id))
+                
+                # Jalankan Task Update Progress Bar (Point 2)
+                q.update_task = bot.loop.create_task(
+                    update_player_interface(q.last_dashboard, q.total_duration, 
+                                         data['title'], data['webpage_url'], 
+                                         data.get('thumbnail'), penerbit, g_id)
+                )
+
+        except Exception as e:
+            logger.error(f"Kritis di Start Stream Guild {g_id}: {e}")
+            # Jika error, kirim pesan ke user dan lanjut ke lagu berikutnya
+            bot.loop.create_task(next_logic(g_id))
+
+
+
+
 
         
         
