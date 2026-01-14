@@ -231,7 +231,7 @@ FFMPEG_OPTIONS = {
         '-ac 2 '
         
         # Filter kenceng & jernih yang kita bahas tadi
-        '-af "asetpts=PTS-STARTPTS,loudnorm=I=-10:TP=-1.0:LRA=11,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
+        '-af "asetpts=PTS-STARTPTS,loudnorm=I=-10:TP=-1.0:LRA=8,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
     ),
 }
 
