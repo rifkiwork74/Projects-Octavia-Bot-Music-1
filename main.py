@@ -212,16 +212,18 @@ FFMPEG_OPTIONS = {
     'before_options': (
         '-reconnect 1 '
         '-reconnect_streamed 1 '
-        '-reconnect_delay_max 5 '
+        '-reconnect_delay_max 1 '
         '-reconnect_at_eof 1 '
         '-nostdin'
     ),
     'options': (
         '-vn '
-        '-b:a 192k '             # High-Quality sesuai dashboard
+        'nostats '
+        '-b:a 320k '             # High-Quality sesuai dashboard
         '-ar 48000 '             # Sample rate Studio
         '-ac 2 '
         '-loglevel warning '
+        
         '-af "aresample=async=1:min_hard_comp=0.100000:first_pts=0" ' # Fix Durasi 00:00
     ),
 }
