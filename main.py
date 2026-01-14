@@ -219,22 +219,27 @@ FFMPEG_OPTIONS = {
         '-reconnect_streamed 1 '
         '-reconnect_delay_max 5 '
         '-reconnect_at_eof 1 '
-        '-nostdin '        # <-- Tambahkan spasi di sini
+        '-nostdin '
         '-threads 2'
     ),
     'options': (
         '-vn '
-        '-nostats '       # <-- Pastikan ada tanda minus '-' di depan nostats
+        '-nostats '
         '-loglevel warning '
-        '-bufsize 2048k ' 
-        '-ar 48000 '
-        '-ac 2 '
-        '-b:a 160k'
         
-        # Filter kenceng & jernih yang kita bahas tadi
+        # Buffer untuk kestabilan koneksi
+        '-bufsize 2048k ' 
+        
+        # Hapus -ar 48000 dan -ac 2 dari sini karena discord.py menambahkannya otomatis.
+        # Menghapus -b:a agar filter loudnorm bisa bekerja maksimal tanpa batasan bitrate manual.
+        
+        # --- THE ULTIMATE AUDIO FILTER ---
+        # I=-11 : Kita naikkan sedikit dari -14 agar lebih 'kencang' sesuai permintaanmu.
+        # LRA=9  : Membuat suara padat dan 'keluar'.
         '-af "asetpts=PTS-STARTPTS,loudnorm=I=-14:TP=-1.0:LRA=9,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
     ),
 }
+
 
 
 
