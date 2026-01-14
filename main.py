@@ -220,25 +220,22 @@ FFMPEG_OPTIONS = {
         '-reconnect_delay_max 5 '
         '-reconnect_at_eof 1 '
         '-nostdin '
+        '-ss 00:00:00 '  # <--- PAKSA mulai dari detik 0
         '-threads 2'
     ),
     'options': (
         '-vn '
         '-nostats '
         '-loglevel warning '
+        '-bufsize 1024k ' # Kecilkan sedikit agar start-up lebih cepat (snappy)
         
-        # Buffer untuk kestabilan koneksi
-        '-bufsize 2048k ' 
-        
-        # Hapus -ar 48000 dan -ac 2 dari sini karena discord.py menambahkannya otomatis.
-        # Menghapus -b:a agar filter loudnorm bisa bekerja maksimal tanpa batasan bitrate manual.
-        
-        # --- THE ULTIMATE AUDIO FILTER ---
-        # I=-11 : Kita naikkan sedikit dari -14 agar lebih 'kencang' sesuai permintaanmu.
-        # LRA=9  : Membuat suara padat dan 'keluar'.
-        '-af "asetpts=PTS-STARTPTS,loudnorm=I=-14:TP=-1.0:LRA=9,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
+        # --- THE FIX START FILTER ---
+        # Kita tambahkan 'aresample=async=1000' khusus di awal untuk 
+        # mengejar ketertinggalan timestamp saat pertama kali connect.
+        '-af "asetpts=PTS-STARTPTS,aresample=async=1000:min_hard_comp=0.01,loudnorm=I=-9:TP=-1.0:LRA=14,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
     ),
 }
+
 
 
 
