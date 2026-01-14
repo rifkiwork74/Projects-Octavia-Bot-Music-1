@@ -219,23 +219,22 @@ FFMPEG_OPTIONS = {
         '-reconnect_streamed 1 '
         '-reconnect_delay_max 5 '
         '-reconnect_at_eof 1 '
-        '-nostdin'
+        '-nostdin '        # <-- Tambahkan spasi di sini
         '-threads 2'
     ),
     'options': (
         '-vn '
-        'nostats '
-        #'-b:a 320k '             # High-Quality sesuai dashboard
-        '-ar 48000 '             # Sample rate Studio
-        '-ac 2 '
-        '-bufsize 2048k ' 
+        '-nostats '       # <-- Pastikan ada tanda minus '-' di depan nostats
         '-loglevel warning '
+        '-bufsize 2048k ' 
+        '-ar 48000 '
+        '-ac 2 '
         
-        #'-af "aresample=async=1:min_hard_comp=0.000001:first_pts=0" ' # Fix Durasi 00:00
+        # Filter kenceng & jernih yang kita bahas tadi
         '-af "asetpts=PTS-STARTPTS,loudnorm=I=-12:TP=-1.5:LRA=14,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
-
     ),
 }
+
 
 
 
