@@ -182,7 +182,11 @@ COOKIES_FILE = 'youtube_cookies.txt'
 #
 #
 YTDL_OPTIONS = {
-    'format': 'bestaudio/best',
+    #'format': 'bestaudio/best',
+    'format': 'bestaudio[abr<=160][ext=webm]/bestaudio/best',
+    #'audioformat': 'm4a',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
     'noplaylist': True,
     'nocheckcertificate': True,
     'ignoreerrors': True,
@@ -199,6 +203,7 @@ YTDL_OPTIONS = {
     # [FIX 2]: High Network Optimization
     # Buffer diperbesar ke 10MB untuk menampung lonjakan data tanpa putus
     'http_chunk_size': 10485760, 
+    'expected_protocol': 'https'
 }
 
 
@@ -212,19 +217,23 @@ FFMPEG_OPTIONS = {
     'before_options': (
         '-reconnect 1 '
         '-reconnect_streamed 1 '
-        '-reconnect_delay_max 1 '
+        '-reconnect_delay_max 5 '
         '-reconnect_at_eof 1 '
         '-nostdin'
+        '-threads 2'
     ),
     'options': (
         '-vn '
         'nostats '
-        '-b:a 320k '             # High-Quality sesuai dashboard
+        #'-b:a 320k '             # High-Quality sesuai dashboard
         '-ar 48000 '             # Sample rate Studio
         '-ac 2 '
+        '-bufsize 2048k ' 
         '-loglevel warning '
         
-        '-af "aresample=async=1:min_hard_comp=0.100000:first_pts=0" ' # Fix Durasi 00:00
+        #'-af "aresample=async=1:min_hard_comp=0.000001:first_pts=0" ' # Fix Durasi 00:00
+        '-af "asetpts=PTS-STARTPTS,loudnorm=I=-12:TP=-1.5:LRA=14,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
+
     ),
 }
 
@@ -708,7 +717,7 @@ class SearchControlView(discord.ui.View):
             await interaction.edit_original_response(embed=status_embed, view=None)
             
             # Tunggu sebentar lalu hapus pesan pencariannya (Opsional agar chat rapi)
-            await asyncio.sleep(5)
+            await asyncio.sleep(3)
             try:
                 await interaction.delete_original_response()
             except:
@@ -1070,7 +1079,7 @@ async def update_player_interface(message, duration, title, url, thumbnail, user
             await message.edit(embed=embed) # View tidak perlu di-update terus menerus, cukup Embed
         except Exception:
             break
-        await asyncio.sleep(5)
+        await asyncio.sleep(3)
 
 
 
