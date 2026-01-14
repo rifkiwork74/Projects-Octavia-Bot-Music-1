@@ -196,6 +196,7 @@ YTDL_OPTIONS = {
     'default_search': 'auto',
     'source_address': '0.0.0.0',
     'cookiefile': 'youtube_cookies.txt', 
+    'cachedir' : 'False',
     # [FIX 1]: Menghapus 'audioformat' dan 'extractaudio'. 
     # Kita melakukan direct streaming, bukan konversi file lokal. 
     # Memaksa format di sini menambah latensi decoding.
@@ -228,7 +229,6 @@ FFMPEG_OPTIONS = {
         '-nostats '
         '-loglevel warning '
         '-bufsize 1024k ' # Kecilkan sedikit agar start-up lebih cepat (snappy)
-        '-b:a 160k'
         # --- THE FIX START FILTER ---
         # Kita tambahkan 'aresample=async=1000' khusus di awal untuk 
         # mengejar ketertinggalan timestamp saat pertama kali connect.
@@ -371,8 +371,21 @@ def bootstrap():
     print("   ANGELSS PROJECT V17 | STARTING SERVICE...")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     
+    # 1. Pembersihan file sampah saat startup
+    count = 0
+    for file in os.listdir('.'):
+        if file.endswith((".webm", ".m4a", ".mp3", ".part")):
+            try:
+                os.remove(file)
+                count += 1
+            except:
+                pass
+    if count > 0:
+        logger.info(f"Cleanup: Berhasil menghapus {count} file sampah.")
+
+    # 2. Validasi Token
     if not TOKEN:
-        logger.critical("Fetal Error: DISCORD_TOKEN is missing from environment.")
+        logger.critical("Fatal Error: DISCORD_TOKEN is missing from environment.")
         exit(1)
         
     if os.path.exists(COOKIES_FILE):
@@ -697,33 +710,41 @@ class SearchControlView(discord.ui.View):
         select = discord.ui.Select(placeholder="🎯 Pilih lagu untuk ditambahkan...", options=options)
         
         async def callback(interaction: discord.Interaction):
-            # Cek Permission
+            # 1. Cek Permission User
             if interaction.user != self.user:
                 return await interaction.response.send_message(
-                    f"⚠️ **Ups!** Hanya {self.user.mention} yang bisa memilih lagu dari hasil ini.", 
+                    f"⚠️ **Ups!** Hanya {self.user.mention} yang bisa memilih lagu.", 
                     ephemeral=True
                 )
             
+            # 2. Defer agar bot punya waktu ambil metadata
             await interaction.response.defer()
             
-            # Memproses ke play_music
-            await play_music(interaction, select.values[0])
+            # 3. Ambil URL lagu yang dipilih
+            selected_url = select.values[0]
             
-            # Ubah tampilan menjadi 'Sukses' lalu hapus menunya agar chat bersih
-            status_embed = discord.Embed(
-                title="✅ Berhasil!",
-                description=f"🎶 Lagu pilihan **{interaction.user.display_name}** telah ditambahkan ke antrean.",
-                color=0x2ecc71
+            # 4. Panggil play_music (Ini akan otomatis masuk Queue jika ada lagu yang sedang jalan)
+            await play_music(interaction, selected_url)
+            
+            # 5. [FIXED] Edit pesan pencarian agar user tahu lagu berhasil masuk
+            # Kita tidak menghapus view=None di sini supaya user bisa lihat statusnya
+            status_embed = self.create_embed()
+            status_embed.add_field(
+                name="✅ Berhasil Ditambahkan", 
+                value=f"Lagu yang dipilih telah masuk ke antrean.", 
+                inline=False
             )
-            # Menghapus View (Tombol & Select) agar tidak bisa diklik lagi
+            
+            # Memberi tahu bahwa pilihan sukses tanpa merusak menu
             await interaction.edit_original_response(embed=status_embed, view=None)
             
-            # Tunggu sebentar lalu hapus pesan pencariannya (Opsional agar chat rapi)
-            await asyncio.sleep(3)
+            # Tunggu 5 detik lalu bersihkan pesan pencarian agar chat rapi (Level Industri)
+            await asyncio.sleep(5)
             try:
                 await interaction.delete_original_response()
             except:
                 pass
+
 
         select.callback = callback
         self.add_item(select)
@@ -1081,7 +1102,7 @@ async def update_player_interface(message, duration, title, url, thumbnail, user
             await message.edit(embed=embed) # View tidak perlu di-update terus menerus, cukup Embed
         except Exception:
             break
-        await asyncio.sleep(3)
+        await asyncio.sleep(1)
 
 
 
@@ -1204,11 +1225,9 @@ async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
     vc = guild.voice_client if guild else None
     if not vc: return
 
-    # Stop task lama agar tidak double progress bar
     if q.update_task: q.update_task.cancel()
 
     try:
-        # Ekstrak metadata menggunakan executor agar bot tidak lag
         data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
         if 'entries' in data: data = data['entries'][0]
         q.current_info = data
@@ -1216,10 +1235,11 @@ async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
         stream_url = data.get('url')
         q.total_duration = data.get('duration', 0)
         
-        # FFmpeg Config dengan fitur Seek
         ffmpeg_before = FFMPEG_OPTIONS['before_options']
-        if seek_time: ffmpeg_before += f" -ss {seek_time}"
+        if seek_time: 
+            ffmpeg_before += f" -ss {seek_time}"
 
+        # --- FIX: Pastikan ini sejajar di dalam blok TRY ---
         audio_source = discord.FFmpegPCMAudio(stream_url, before_options=ffmpeg_before, options=FFMPEG_OPTIONS['options'])
         source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
 
@@ -1227,22 +1247,24 @@ async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
             if error: logger.error(f"Player Error: {error}")
             if q.update_task: bot.loop.call_soon_threadsafe(q.update_task.cancel)
             
-            # Logika Loop vs Next
             if q.loop:
                 bot.loop.create_task(start_stream(None, q.current_info['webpage_url'], guild_id_manual=g_id))
             else:
                 bot.loop.create_task(next_logic(g_id))
+        
+        await asyncio.sleep(1.5) 
 
-        if vc.is_playing(): vc.stop()
+        if vc.is_playing(): 
+            vc.stop()
+            
         vc.play(source, after=after_playing)
         
         q.start_time = time.time() - (float(seek_time) if seek_time else 0)
         
-        # Kirim Dashboard Baru
         channel = bot.get_channel(q.text_channel_id)
         if channel:
             penerbit = interaction.user if interaction else bot.user
-            emb = buat_embed_dashboard(q, seek_time or 0, q.total_duration, data['title'], data['webpage_url'], data.get('thumbnail'), penerbit)
+            emb = buat_embed_dashboard(q, float(seek_time or 0), q.total_duration, data['title'], data['webpage_url'], data.get('thumbnail'), penerbit)
             
             if q.last_dashboard:
                 try: await q.last_dashboard.delete()
@@ -1256,7 +1278,7 @@ async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
     except Exception as e:
         logger.error(f"Stream Error: {e}")
         bot.loop.create_task(next_logic(g_id))
-        
+
         
         
 #
@@ -1284,35 +1306,70 @@ async def next_logic(guild_id):
 
 
 
+
+
 #
-# 🎮 6.6 : GATEWAY PEMUTAR (PLAY CONTROL)
+# 🎮 6.6 : GATEWAY PEMUTAR (PLAY CONTROL) - AUDIT FIX
 # ------------------------------------------------------------------------------
 #
 #
 async def play_music(interaction, url):
+    # 1. Ambil queue data
     q = get_queue(interaction.guild_id)
     q.text_channel_id = interaction.channel.id
     
-    if not interaction.guild.voice_client:
-        if interaction.user.voice:
-            await interaction.user.voice.channel.connect()
-        else:
-            return await interaction.followup.send("❌ Masuk ke Voice dulu!", ephemeral=True)
-    
+    # 2. DEFINISIKAN VC (Penting: agar variabel 'vc' terbaca di bawah)
     vc = interaction.guild.voice_client
     
+    # 3. CEK KONEKSI (Jika bot belum masuk VC, suruh masuk dulu)
+    if not vc:
+        if interaction.user.voice:
+            vc = await interaction.user.voice.channel.connect()
+        else:
+            # Jika user tidak di VC, kirim pesan dan stop
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ Masuk ke Voice dulu kii!", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ Masuk ke Voice dulu kii!", ephemeral=True)
+            return
+
+    # 4. PENANGANAN DEFER (Anti-Timeout)
+    # Ini supaya kalau proses ambil link YouTube lama, Discord tidak menganggap bot mati
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
+
+    # 5. LOGIKA QUEUE VS DIRECT PLAY
     if vc.is_playing() or vc.is_paused():
+        # JIKA SEDANG MAIN: Masukkan ke Antrean
         try:
+            # Ekstrak metadata di background (agar bot tidak freeze)
             data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
             if 'entries' in data: data = data['entries'][0]
-            q.queue.append({'title': data['title'], 'url': url})
             
-            emb = discord.Embed(title="📥 Antrean Ditambahkan", description=f"✨ **[{data['title']}]({url})**", color=0x3498db)
+            # Tambahkan metadata ke deque (antrean)
+            q.queue.append({
+                'title': data.get('title', 'Unknown Title'), 
+                'url': url, 
+                'thumbnail': data.get('thumbnail')
+            })
+            
+            # Kirim Embed Konfirmasi (Level Industri)
+            emb = discord.Embed(
+                title="📥 Antrean Ditambahkan", 
+                description=f"✨ **[{data['title']}]({url})**", 
+                color=0x3498db
+            )
+            emb.set_footer(text="Gunakan /queue untuk melihat semua daftar")
+            
             await interaction.followup.send(embed=emb, ephemeral=True)
+            
         except Exception as e:
-            await interaction.followup.send(f"⚠️ Error: {e}", ephemeral=True)
+            logger.error(f"Error saat tambah antrean: {e}")
+            await interaction.followup.send(f"⚠️ **Error:** Gagal mengambil data lagu.", ephemeral=True)
     else:
+        # JIKA DIAM: Langsung putar lagu pertama
         await start_stream(interaction, url)
+
 
 
 
@@ -1382,62 +1439,75 @@ async def logic_tampilkan_antrean(interaction: discord.Interaction, guild_id):
 @bot.tree.command(name="play", description="Putar musik menggunakan judul atau link YouTube")
 @app_commands.describe(cari="Masukkan Judul Lagu atau Link YouTube")
 async def play(interaction: discord.Interaction, cari: str):
-    # 1. Defer wajib untuk menghindari timeout 3 detik (Interaksi awal)
-    await interaction.response.defer(ephemeral=True)
+    # 1. Defer wajib (ephemeral=True agar hanya user yang bersangkutan yang lihat prosesnya)
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
     
     q = get_queue(interaction.guild_id)
 
-    # Bersihkan pesan pencarian lama jika masih ada di memory
+    # Bersihkan sisa-sisa pencarian lama
     if q.last_search_msg:
-        try: await q.last_search_msg.delete()
-        except: pass
+        try: 
+            await q.last_search_msg.delete()
+        except: 
+            pass
 
     # --- [ LOGIKA A: INPUT ADALAH LINK ] ---
-    if "http" in cari: 
+    if "http" in cari.lower(): 
         await interaction.followup.send("🔗 **Menganalisa tautan...**", ephemeral=True)
-        # Langsung proses ke engine utama
+        # Tambahkan sedikit delay agar API Discord tidak kaget saat transisi ke start_stream
         await play_music(interaction, cari)
-        # Berikan konfirmasi akhir agar interaksi ditutup dengan rapi
-        await interaction.edit_original_response(content=f"✅ **Tautan diterima:** Memproses metadata audio...")
+        return await interaction.edit_original_response(content=f"✅ **Tautan berhasil dianalisa.**")
     
     # --- [ LOGIKA B: INPUT ADALAH JUDUL (PENCARIAN) ] ---
     else:
-        await interaction.followup.send(f"🔍 **Mencari:** `{cari}`...", ephemeral=True)
+        await interaction.followup.send(f"🔍 **Mencari:** `{cari}` di database YouTube...", ephemeral=True)
+        
+        # Fungsi internal untuk pencarian yang lebih aman (di dalam run_in_executor)
+        def safe_search():
+            try:
+                search_config = YTDL_OPTIONS.copy()
+                search_config['extract_flat'] = True
+                with yt_dlp.YoutubeDL(search_config) as ydl:
+                    # Kita bungkus proses pencarian di dalam context manager 'with'
+                    return ydl.extract_info(f"ytsearch5:{cari}", download=False)
+            except Exception as e:
+                logger.error(f"Pencarian yt-dlp gagal: {e}")
+                return None
+
         try:
-            # SINKRONISASI KONFIGURASI (Poin 1):
-            # Mengambil YTDL_OPTIONS global dan memodifikasinya sedikit untuk pencarian cepat
-            search_config = YTDL_OPTIONS.copy()
-            search_config['extract_flat'] = True  # Agar pencarian sangat cepat (tidak download info detail tiap lagu)
+            # Eksekusi pencarian secara asynchronous
+            data = await bot.loop.run_in_executor(None, safe_search)
             
-            # Menjalankan pencarian di background executor agar bot tidak lag/hang
-            # Menggunakan f"ytsearch5:{cari}" untuk mengambil 5 hasil teratas
-            data = await bot.loop.run_in_executor(
-                None, 
-                lambda: yt_dlp.YoutubeDL(search_config).extract_info(f"ytsearch5:{cari}", download=False)
-            )
+            # Validasi hasil pencarian
+            if not data or 'entries' not in data or not data['entries']:
+                return await interaction.edit_original_response(
+                    content="❌ **Gagal:** Lagu tidak ditemukan. Pastikan judul benar atau coba gunakan link langsung."
+                )
             
-            if not data or 'entries' not in data or len(data['entries']) == 0:
-                return await interaction.edit_original_response(content="❌ **Gagal:** Lagu tidak ditemukan. Coba judul lain.")
+            # Ambil entri pencarian (limit 5) dan pastikan tidak ada data None
+            entries = [e for e in data['entries'] if e is not None][:5]
             
-            # Ambil entri pencarian (limit 5)
-            entries = data['entries'][:5]
-            
-            # Panggil UI Dashboard Pencarian (SearchControlView)
+            if not entries:
+                return await interaction.edit_original_response(content="❌ **Gagal:** Hasil pencarian kosong.")
+
+            # Panggil UI Dashboard Pencarian
             view = SearchControlView(entries, interaction.user)
             
-            # Tampilkan pilihan ke user
+            # Kirim hasil ke user
             q.last_search_msg = await interaction.edit_original_response(
-                content=None, 
+                content="✨ **Berikut adalah hasil pencarian terbaik untukmu kii:**", 
                 embed=view.create_embed(), 
                 view=view
             )
 
         except Exception as e:
-            logger.error(f"Error search system: {e}")
+            logger.error(f"Kritis pada System Play: {e}")
             await interaction.edit_original_response(
-                content=f"⚠️ **System Error:** Gagal melakukan pencarian. (Cek log konsol/cookies)"
+                content="⚠️ **System Error:** Terjadi gangguan pada koneksi YouTube. Silahkan coba sesaat lagi."
             )
 
+   
 
 
 #
