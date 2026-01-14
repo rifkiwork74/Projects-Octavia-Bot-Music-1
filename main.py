@@ -228,11 +228,11 @@ FFMPEG_OPTIONS = {
         '-nostats '
         '-loglevel warning '
         '-bufsize 1024k ' # Kecilkan sedikit agar start-up lebih cepat (snappy)
-        
+        '-b:a 160k'
         # --- THE FIX START FILTER ---
         # Kita tambahkan 'aresample=async=1000' khusus di awal untuk 
         # mengejar ketertinggalan timestamp saat pertama kali connect.
-        '-af "asetpts=PTS-STARTPTS,aresample=async=1000:min_hard_comp=0.01,loudnorm=I=-9:TP=-1.0:LRA=14,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
+        '-af "asetpts=PTS-STARTPTS,aresample=async=1000:min_hard_comp=0.01,loudnorm=I=-11:TP=-1.0:LRA=9,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
     ),
 }
 
