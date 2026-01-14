@@ -1249,9 +1249,8 @@ async def sync_dashboard_buttons(message, guild_id):
 
 
 
-
 #
-# 📡 6.4 : MESIN UTAMA - START STREAM (ULTIMATE STABLE COMBINED)
+# 📡 6.4 : MESIN UTAMA - START STREAM (ULTIMATE STABLE + SMART ERROR HANDLER)
 # ------------------------------------------------------------------------------
 #
 async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
@@ -1292,13 +1291,16 @@ async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
                     return ydl.extract_info(url, download=False)
 
             data = await bot.loop.run_in_executor(None, fetch_info)
+            if not data:
+                raise Exception("Metadata tidak ditemukan")
+                
             if 'entries' in data: data = data['entries'][0]
             
             # --- [ POINT 4: METADATA & FORMAT SAFETY ] ---
             q.current_info = data
-            stream_url = data.get('url') # Coba ambil URL langsung
+            stream_url = data.get('url') 
             
-            # Jika URL utama tidak ada (fallback ke formats)
+            # Fallback jika URL utama tidak ada
             if not stream_url:
                 formats = data.get('formats', [])
                 for f in formats:
@@ -1325,11 +1327,14 @@ async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
 
             # --- AFTER PLAYING LOGIC ---
             def after_playing(error):
-                if error: logger.error(f"Player Error: {error}")
-                # Hentikan progress bar saat lagu habis
+                if error: 
+                    logger.error(f"Player Error in Guild {g_id}: {error}")
+                
+                # Hentikan progress bar saat lagu habis/error
                 if q.update_task: 
                     bot.loop.call_soon_threadsafe(q.update_task.cancel)
                 
+                # Cek jika lagu harus diulang (Loop) atau lanjut antrean
                 if q.loop:
                     bot.loop.create_task(start_stream(None, q.current_info['webpage_url'], guild_id_manual=g_id))
                 else:
@@ -1359,7 +1364,7 @@ async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
 
                 q.last_dashboard = await channel.send(embed=emb, view=MusicDashboard(g_id))
                 
-                # Jalankan Task Update Progress Bar (Point 2)
+                # Jalankan Task Update Progress Bar
                 q.update_task = bot.loop.create_task(
                     update_player_interface(q.last_dashboard, q.total_duration, 
                                          data['title'], data['webpage_url'], 
@@ -1367,9 +1372,33 @@ async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
                 )
 
         except Exception as e:
-            logger.error(f"Kritis di Start Stream Guild {g_id}: {e}")
-            # Jika error, kirim pesan ke user dan lanjut ke lagu berikutnya
+            # --- [ SMART ERROR HANDLER START ] ---
+            error_str = str(e)
+            logger.error(f"Kritis di Start Stream Guild {g_id}: {error_str}")
+            
+            chan = bot.get_channel(q.text_channel_id)
+            if chan:
+                if "403" in error_str:
+                    msg = "🚫 **YouTube Error (403):** Akses ditolak. Mencoba memutar lagu berikutnya..."
+                elif "sign in" in error_str.lower():
+                    msg = "🔞 **YouTube Error:** Lagu ini dibatasi umur (Age Restricted)."
+                elif "video unavailable" in error_str.lower():
+                    msg = "❌ **YouTube Error:** Video tidak tersedia/dihapus."
+                else:
+                    msg = f"⚠️ **Audio Error:** Masalah pada stream. `{error_str[:50]}...`"
+                
+                await chan.send(msg, delete_after=15)
+
+            # Pastikan task progress bar mati jika eror di tengah jalan
+            if q.update_task:
+                q.update_task.cancel()
+
+            # Skip ke lagu berikutnya agar bot tidak bengong
             bot.loop.create_task(next_logic(g_id))
+            # --- [ SMART ERROR HANDLER END ] ---
+
+
+
 
 
 
@@ -2094,41 +2123,44 @@ async def debug_system(interaction: discord.Interaction):
 
 
 
-# --- [ 8 ] ---
+# --- [ 8 ] --- 8.1
 #
 # ==============================================================================
 #			[ GLOBAL ERROR HANDLER - THE SAFETY NET ]
 # ==============================================================================
-
+#
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    """Menangkap semua error slash command agar bot tidak terlihat 'mati' saat error."""
-    
+    # Jika error disebabkan oleh cooldown
     if isinstance(error, app_commands.CommandOnCooldown):
         return await interaction.response.send_message(
-            f"⏳ **Sabar kii!** Perintah ini sedang cooldown. Coba lagi dalam `{error.retry_after:.1f}` detik.", 
-            ephemeral=True
-        )
-    
-    elif isinstance(error, app_commands.MissingPermissions):
-        return await interaction.response.send_message(
-            "🚫 **Akses Ditolak:** Kamu tidak punya izin untuk melakukan ini.", 
+            f"⏳ **Sabar kii!** Kamu terlalu cepat. Coba lagi dalam `{error.retry_after:.1f}` detik.", 
             ephemeral=True
         )
 
-    # Error umum (misal: Youtube 403, FFmpeg mati, dll)
-    logger.error(f"Global Error Caught: {error}")
-    
-    msg = "⚠️ **Terjadi kesalahan internal.**\n"
-    if "403" in str(error):
-        msg += "Info: YouTube memblokir akses (403). Coba update cookies atau ganti judul lagu."
-    else:
-        msg += f"Detail: `{str(error)[:100]}...`"
+    # Log error asli ke konsol untuk debug kamu (IT Engineering)
+    logger.error(f"Global Error: {error}")
 
-    if interaction.response.is_done():
-        await interaction.followup.send(msg, ephemeral=True)
-    else:
-        await interaction.response.send_message(msg, ephemeral=True)
+    # Menangani error YouTube saat proses ekstraksi metadata
+    err_msg = str(error).lower()
+    
+    friendly_msg = "⚠️ **Terjadi kesalahan sistem.**"
+    
+    if "403" in err_msg or "forbidden" in err_msg:
+        friendly_msg = "🚫 **YouTube Block (403):** Permintaan ditolak oleh YouTube. Coba lagi nanti atau gunakan link lain."
+    elif "private video" in err_msg:
+        friendly_msg = "🔒 **Private:** Video ini diprivasi oleh pemiliknya."
+    elif "not found" in err_msg:
+        friendly_msg = "🔍 **Not Found:** Lagu tidak ditemukan di YouTube."
+
+    # Kirim respon ke user agar mereka tahu apa yang terjadi
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(friendly_msg, ephemeral=True)
+        else:
+            await interaction.response.send_message(friendly_msg, ephemeral=True)
+    except:
+        pass
 
 
 
