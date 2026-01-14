@@ -229,7 +229,7 @@ FFMPEG_OPTIONS = {
         '-bufsize 2048k ' 
         '-ar 48000 '
         '-ac 2 '
-        '-a:b 160k'
+        '-b:a 160k'
         
         # Filter kenceng & jernih yang kita bahas tadi
         '-af "asetpts=PTS-STARTPTS,loudnorm=I=-14:TP=-1.0:LRA=9,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
