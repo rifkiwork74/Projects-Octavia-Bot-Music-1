@@ -204,10 +204,10 @@ YTDL_OPTIONS = {
     # [FIX 2]: High Network Optimization
     # Buffer diperbesar ke 10MB untuk menampung lonjakan data tanpa putus
     'http_chunk_size': 10485760, 
+    'expected_protocol': 'https',
     'headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
     }
-    'expected_protocol': 'https',
 }
 
 
