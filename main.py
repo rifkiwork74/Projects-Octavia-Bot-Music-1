@@ -937,15 +937,22 @@ class QueueControlView(discord.ui.View):
         vc = interaction.guild.voice_client
         index_dipilih = int(interaction.data['values'][0])
         
-        # Logika YouTube: Buang lagu sebelum pilihan
-        for _ in range(index_dipilih):
-            q.queue.popleft()
-            
-        if vc:
-            q.is_seeking = False # Biarkan sistem next_logic bekerja normal
-            vc.stop()
-            await interaction.response.send_message(f"🚀 **Melompat ke lagu pilihanmu!**", ephemeral=True)
+        # --- [ LOGIKA PINDAH LAGU TANPA MENGHAPUS ] ---
+        # Ambil lagu yang dipilih dari daftar
+        daftar_antrean = list(q.queue)
+        lagu_pilihan = daftar_antrean.pop(index_dipilih)
+        
+        # Masukkan kembali sisa lagu ke antrean utama (agar tidak hilang)
+        q.queue.clear()
+        for s in daftar_antrean:
+            q.queue.append(s)
 
+        if vc:
+            # Beritahu sistem bahwa kita mau 'Force Start' lagu baru
+            q.is_seeking = False 
+            # Kita jalankan play_music atau start_stream untuk lagu pilihan
+            await interaction.response.send_message(f"🚀 **Melompat ke:** `{lagu_pilihan['title'][:50]}`", ephemeral=True)
+            await start_stream(interaction, lagu_pilihan['url'])
 
 
 
@@ -1002,18 +1009,26 @@ class MusicDashboard(discord.ui.View):
         current_pos = time.time() - q.start_time
         new_pos = min(q.total_duration, current_pos + 10)
         await self.execute_premium_seek(interaction, new_pos)
-
-    # --- TOMBOL 4: SKIP (UTAMA) ---
+        
+    # --- TOMBOL 4: SKIP (DIPERBAIKI) ---
     @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.primary)
     async def sk(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
         q = get_queue(self.guild_id)
         vc = interaction.guild.voice_client
         
-        q.loop = False # Matikan loop agar pindah lagu
-        q.is_seeking = False 
+        if not vc or not (vc.is_playing() or vc.is_paused()):
+            return await interaction.response.send_message("❌ Tidak ada lagu untuk di-skip!", ephemeral=True)
+
+        await interaction.response.defer()
+        q.loop = False # Matikan loop supaya nggak muter lagu yang sama
+        q.is_seeking = False # Reset flag seeking
         
-        if vc: vc.stop() # Otomatis trigger next_logic
+        if q.update_task:
+            q.update_task.cancel() # Matikan bar lama
+            
+        vc.stop() # Ini akan memicu next_logic() secara otomatis
+        
+    
 
     # --- TOMBOL 5: ANTREAN ---
     @discord.ui.button(label="Antrean", emoji="📜", style=discord.ButtonStyle.gray)
@@ -1398,11 +1413,9 @@ async def next_logic(guild_id):
 
 
 
-
-
-
+l
 # ------------------------------------------------------------------------------
-# 🎵 6.6 : LOGIKA PLAY MUSIC (SINKRONISASI NOTIFIKASI) - FIXED
+# 🎵 6.6 : LOGIKA PLAY MUSIC (SINKRONISASI NOTIFIKASI & AUTO-JOIN) - UPDATED
 # ------------------------------------------------------------------------------
 async def play_music(interaction, search, is_next=False):
     if not interaction.response.is_done():
@@ -1411,6 +1424,28 @@ async def play_music(interaction, search, is_next=False):
     g_id = interaction.guild.id
     q = get_queue(g_id)
     q.text_channel_id = interaction.channel.id
+
+    # --- [ LOGIKA AUTO-JOIN START ] ---
+    # Cek apakah user ada di voice channel
+    if not interaction.user.voice:
+        return await interaction.followup.send(
+            "🚫 **Gagal:** Kamu harus masuk ke Voice Channel dulu kii!", 
+            ephemeral=True
+        )
+
+    vc = interaction.guild.voice_client
+    target_channel = interaction.user.voice.channel
+
+    # Jika bot belum masuk VC, suruh dia masuk otomatis
+    if not vc:
+        try:
+            vc = await target_channel.connect()
+        except Exception as e:
+            return await interaction.followup.send(f"❌ Gagal masuk ke Voice: {e}", ephemeral=True)
+    # Jika bot sudah di VC lain, pindahkan ke channel user
+    elif vc.channel.id != target_channel.id:
+        await vc.move_to(target_channel)
+    # --- [ LOGIKA AUTO-JOIN END ] ---
 
     try:
         def search_yt():
@@ -1428,11 +1463,9 @@ async def play_music(interaction, search, is_next=False):
             'duration': data.get('duration', 0),
             'requester': interaction.user
         }
-
-        vc = interaction.guild.voice_client
         
         # SINKRONISASI: Cek apakah lagu sedang diputar atau antrean kosong
-        if vc and (vc.is_playing() or vc.is_paused()):
+        if vc.is_playing() or vc.is_paused():
             # --- [ LOGIKA MASUK ANTREAN ] ---
             if is_next:
                 q.queue.insert(0, song_data)
@@ -1447,21 +1480,17 @@ async def play_music(interaction, search, is_next=False):
                 except: pass
 
             emb_queue = buat_embed_added_queue(data['title'], data['webpage_url'], data.get('thumbnail'), interaction.user, posisi)
-            # Followup send untuk Webhook TIDAK boleh pakai delete_after
             q.last_msg = await interaction.followup.send(embed=emb_queue)
             
         else:
             # --- [ LANGSUNG PUTAR ] ---
             q.last_msg = None
-            # PERBAIKAN DI SINI: Menghapus delete_after agar tidak error
             await interaction.followup.send(f"🎶 **Memulai Sesi:** {data['title'][:50]}...")
             await start_stream(interaction, data['webpage_url'])
 
     except Exception as e:
         logger.error(f"Play Music Error: {e}")
-        # Followup di sini juga dipastikan bersih dari parameter aneh
         await interaction.followup.send("⚠️ Gagal memproses permintaan musik.", ephemeral=True)
-
 
 
 
