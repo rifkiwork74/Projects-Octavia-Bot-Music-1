@@ -908,10 +908,6 @@ class VolumeControlView(discord.ui.View):
 
 
 
-
-
-
-
 #
 # 📋 5.3.  : UI Class: Queue Selector (LOMPAT KE LAGU TERTENTU)
 # ------------------------------------------------------------------------------
@@ -947,9 +943,13 @@ class QueueControlView(discord.ui.View):
 
 
 
+
+
+
+
 #
 #
-# 📼 5.4.  :	Ui Class: Dashboard & Audio - Player (PREMIUM SEAMLESS VERSION)
+# 📼 5.4.  : UI Class: Dashboard & Audio Player (FIXED & SINKRON)
 # ------------------------------------------------------------------------------
 #
 class MusicDashboard(discord.ui.View):
@@ -957,17 +957,16 @@ class MusicDashboard(discord.ui.View):
         super().__init__(timeout=None)
         self.guild_id = guild_id
 	
-	# --- TOMBOL 1: MUNDUR 10 DETIK ---
+    # --- TOMBOL 1: MUNDUR 10 DETIK ---
     @discord.ui.button(label="-10s", emoji="⏪", style=discord.ButtonStyle.secondary)
     async def backward(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         q = get_queue(self.guild_id)
         current_pos = time.time() - q.start_time
         new_pos = max(0, current_pos - 10)
-        
         await self.execute_premium_seek(interaction, new_pos)
         
-	# --- TOMBOL 2: JEDA / LANJUT ---
+    # --- TOMBOL 2: JEDA / LANJUT ---
     @discord.ui.button(label="Jeda", emoji="⏸️", style=discord.ButtonStyle.secondary)
     async def pp(self, interaction: discord.Interaction, button: discord.ui.Button):
         q = get_queue(self.guild_id)
@@ -979,81 +978,41 @@ class MusicDashboard(discord.ui.View):
             q.pause_time = time.time()
             button.emoji, button.label, button.style = "▶️", "Lanjut", discord.ButtonStyle.success 
         else:
-            current_pos = time.time() - q.start_time
+            # Hitung posisi saat ini agar bar tidak lompat ke awal
+            current_pos = q.pause_time - q.start_time
             q.start_time = time.time() - current_pos
             vc.resume()
             button.emoji, button.label, button.style = "⏸️", "Jeda", discord.ButtonStyle.secondary
 
         await interaction.response.edit_message(view=self)
 	
-	# --- TOMBOL 3: MAJU 10 DETIK ---
-    @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.primary)
-    async def sk(self, interaction: discord.Interaction, button: discord.ui.Button):
+    # --- TOMBOL 3: MAJU 10 DETIK ---
+    @discord.ui.button(label="+10s", emoji="⏩", style=discord.ButtonStyle.secondary)
+    async def forward(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         q = get_queue(self.guild_id)
-        vc = interaction.guild.voice_client
-        
-        q.loop = False # <--- Tambahkan ini kii biar skip-nya gak nyangkut di loop
-        q.is_seeking = False 
-        
-        if vc: vc.stop()
-
-        
+        current_pos = time.time() - q.start_time
+        new_pos = min(q.total_duration, current_pos + 10)
         await self.execute_premium_seek(interaction, new_pos)
 
-    # --- [ FUNGSI JANTUNG PREMIUM SEEK ] ---
-    async def execute_premium_seek(self, interaction, new_pos):
-        q = get_queue(self.guild_id)
-        vc = interaction.guild.voice_client
-        
-        if vc and (vc.is_playing() or vc.is_paused()):
-            # 1. Kunci sistem (Agar after_playing tidak memicu lagu berikutnya)
-            q.is_seeking = True 
-            
-            # 2. Ambil metadata lagu saat ini
-            data = q.current_info
-            # Masukkan posisi detik baru ke dalam FFmpeg
-            ffmpeg_before = FFMPEG_OPTIONS['before_options'] + f" -ss {new_pos}"
-            
-            # 3. Rakit Source Audio Baru tanpa merusak Dashboard
-            audio_source = discord.FFmpegPCMAudio(data['url'], before_options=ffmpeg_before, options=FFMPEG_OPTIONS['options'])
-            source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
-            
-            # 4. Ganti Lagu secara Live Touch
-            vc.stop() # Ini akan memicu after_playing, tapi akan diabaikan karena is_seeking = True
-            vc.play(source, after=lambda e: self.after_premium_seek(e, self.guild_id))
-            
-            # 5. Update Waktu agar Progress Bar Langsung Sinkron
-            q.start_time = time.time() - new_pos
-            
-            # 6. Beri tanda ke user sebentar
-            # await interaction.followup.send(f"⏩ Melompat ke `{format_time(new_pos)}`", ephemeral=True)
-            
-            # Lepas kunci setelah 1 detik agar engine FFmpeg stabil
-            await asyncio.sleep(1)
-            q.is_seeking = False
-
-    def after_premium_seek(self, error, g_id):
-        q = get_queue(g_id)
-        # Jika bukan sedang proses lompat detik, barulah lanjut ke lagu berikutnya
-        if not q.is_seeking:
-            bot.loop.create_task(next_logic(g_id))
-
-	# --- TOMBOL 4: SKIP ---
+    # --- TOMBOL 4: SKIP (UTAMA) ---
     @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.primary)
     async def sk(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         q = get_queue(self.guild_id)
         vc = interaction.guild.voice_client
-        q.is_seeking = False # Pastikan false agar pindah lagu
-        if vc: vc.stop()
+        
+        q.loop = False # Matikan loop agar pindah lagu
+        q.is_seeking = False 
+        
+        if vc: vc.stop() # Otomatis trigger next_logic
 
-	# --- TOMBOL 7: ANTREAN (DENGAN PEMILIH) ---
+    # --- TOMBOL 5: ANTREAN ---
     @discord.ui.button(label="Antrean", emoji="📜", style=discord.ButtonStyle.gray)
     async def list_q_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await logic_tampilkan_antrean(interaction, self.guild_id)
 
-	# --- TOMBOL STOP, VOLUME, LOOP (SAMA SEPERTI SEBELUMNYA) ---
+    # --- TOMBOL 6: LOOP ---
     @discord.ui.button(label="Loop: OFF", emoji="🔁", style=discord.ButtonStyle.gray)
     async def loop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         q = get_queue(self.guild_id)
@@ -1062,12 +1021,14 @@ class MusicDashboard(discord.ui.View):
         button.style = discord.ButtonStyle.success if q.loop else discord.ButtonStyle.gray
         button.emoji = "🔂" if q.loop else "🔁"
         await interaction.response.edit_message(view=self)
-
+        
+    # --- TOMBOL 7: Volume ---
     @discord.ui.button(label="Volume", emoji="🔊", style=discord.ButtonStyle.gray)
-    async def vol(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def vol_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = VolumeControlView(self.guild_id)
         await interaction.response.send_message(embed=view.create_embed(), view=view, ephemeral=True)
-
+        
+    # --- TOMBOL 8: STOP ---
     @discord.ui.button(label="Stop", emoji="⏹️", style=discord.ButtonStyle.danger)
     async def st(self, interaction: discord.Interaction, button: discord.ui.Button):
         q = get_queue(self.guild_id)
@@ -1076,40 +1037,30 @@ class MusicDashboard(discord.ui.View):
         if vc: await vc.disconnect()
         await interaction.response.send_message(embed=buat_embed_stop(interaction.user, 0), delete_after=10)
 
-
-
-
-
-
-#
-# 📋 5.4.  : UI Class: Queue Selector (LOMPAT KE LAGU TERTENTU)
-# ------------------------------------------------------------------------------
-#
-class QueueControlView(discord.ui.View):
-    def __init__(self, guild_id, user, options):
-        super().__init__(timeout=60)
-        self.guild_id = guild_id
-        self.user = user
-        select = discord.ui.Select(placeholder="🎯 Pilih lagu untuk langsung diputar...", options=options)
-        select.callback = self.callback
-        self.add_item(select)
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user != self.user:
-            return await interaction.response.send_message("⚠️ Hanya pemanggil yang bisa memilih!", ephemeral=True)
-        
+    # --- [ FUNGSI JANTUNG PREMIUM SEEK ] ---
+    async def execute_premium_seek(self, interaction, new_pos):
         q = get_queue(self.guild_id)
         vc = interaction.guild.voice_client
-        index_dipilih = int(interaction.data['values'][0])
         
-        # Logika YouTube: Buang lagu sebelum pilihan
-        for _ in range(index_dipilih):
-            q.queue.popleft()
+        if vc and (vc.is_playing() or vc.is_paused()):
+            q.is_seeking = True 
+            data = q.current_info
             
-        if vc:
-            q.is_seeking = False # Biarkan sistem next_logic bekerja normal
-            vc.stop()
-            await interaction.response.send_message(f"🚀 **Melompat ke lagu pilihanmu!**", ephemeral=True)
+            ffmpeg_before = FFMPEG_OPTIONS['before_options'] + f" -ss {new_pos}"
+            audio_source = discord.FFmpegPCMAudio(data['url'], before_options=ffmpeg_before, options=FFMPEG_OPTIONS['options'])
+            source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
+            
+            vc.stop() 
+            vc.play(source, after=lambda e: bot.loop.create_task(next_logic(self.guild_id)) if not q.is_seeking else None)
+            
+            q.start_time = time.time() - new_pos
+            await asyncio.sleep(1)
+            q.is_seeking = False
+
+
+
+
+
 
 
 
