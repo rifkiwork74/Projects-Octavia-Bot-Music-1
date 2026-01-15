@@ -568,11 +568,13 @@ class ModernBot(commands.Bot):
         )
 
     async def setup_hook(self):
-        """Sinkronisasi command saat bot start dengan error handling."""
+        """Sinkronisasi command global yang stabil untuk banyak server."""
         try:
-            # SINKRONISASI GLOBAL (Wajib agar /command muncul)
+            # Sync secara global (untuk semua server)
             synced = await self.tree.sync()
-            logger.info(f"✅ Berhasil sinkronisasi {len(synced)} slash commands secara global.")
+            print(f"✅ GLOBAL SYNC: {len(synced)} commands terdaftar di seluruh server.")
+        except discord.errors.Forbidden:
+            logger.error("❌ Gagal Sync: Cek apakah bot memiliki scope 'applications.commands'.")
         except Exception as e:
             logger.error(f"❌ Gagal sinkronisasi command: {e}")
 
@@ -1430,67 +1432,43 @@ async def next_logic(guild_id):
 # 🎮 6.6 : GATEWAY PEMUTAR (PLAY CONTROL) - AUDIT FIX (SYNCED)
 # ------------------------------------------------------------------------------
 #
+#
+# --- DI SECTION 6.6 (VERSI FIX) ---
 async def play_music(interaction, url):
-    # 1. Ambil queue data
     q = get_queue(interaction.guild_id)
     q.text_channel_id = interaction.channel.id
-    
-    # 2. DEFINISIKAN VC
     vc = interaction.guild.voice_client
     
-    # 3. CEK KONEKSI
+    # Langsung ke cek koneksi, jangan pakai defer lagi di sini!
     if not vc:
         if interaction.user.voice:
             vc = await interaction.user.voice.channel.connect()
         else:
-            if not interaction.response.is_done():
-                await interaction.response.send_message("❌ Masuk ke Voice dulu kii!", ephemeral=True)
-            else:
-                await interaction.followup.send("❌ Masuk ke Voice dulu kii!", ephemeral=True)
+            await interaction.followup.send("❌ Masuk ke Voice dulu kii!", ephemeral=True)
             return
 
-    # 4. PENANGANAN DEFER (Anti-Timeout)
-    if not interaction.response.is_done():
-        await interaction.response.defer(ephemeral=True)
-
-    # 5. LOGIKA QUEUE VS DIRECT PLAY
+    # 2. LOGIKA QUEUE VS DIRECT PLAY
     if vc.is_playing() or vc.is_paused():
-        # JIKA SEDANG MAIN: Masukkan ke Antrean
         try:
-            # Ekstrak metadata di background
             data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
             if 'entries' in data: data = data['entries'][0]
             
-            # Tambahkan metadata ke deque (antrean)
             q.queue.append({
                 'title': data.get('title', 'Unknown Title'), 
                 'url': url, 
                 'thumbnail': data.get('thumbnail')
             })
             
-            # Kirim Embed Konfirmasi
-            emb = discord.Embed(
-                title="📥 Antrean Ditambahkan", 
-                description=f"✨ **[{data['title']}]({url})**", 
-                color=0x3498db
-            )
-            emb.set_footer(text="Gunakan /queue untuk melihat semua daftar")
-            
-            # [SYNC]: Simpan pesan notifikasi ini ke temp_messages agar nanti dihapus otomatis
+            emb = discord.Embed(title="📥 Antrean Ditambahkan", description=f"✨ **[{data['title']}]({url})**", color=0x3498db)
+            # Pakai followup.send agar tidak bentrok dengan defer-nya /play
             notif_msg = await interaction.followup.send(embed=emb)
-            if not interaction.ephemeral:
-                q.temp_messages.append(notif_msg)
+            q.temp_messages.append(notif_msg)
             
         except Exception as e:
-            logger.error(f"Error saat tambah antrean: {e}")
             await interaction.followup.send(f"⚠️ **Error:** Gagal mengambil data lagu.", ephemeral=True)
     else:
-        # JIKA DIAM: Langsung putar lagu pertama
-        # [SYNC]: Bersihkan semua sampah pesan (seperti menu pencarian) sebelum dashboard muncul
         await auto_clean_ups(interaction.guild_id)
         await start_stream(interaction, url)
-
-
 
 
 
@@ -2156,7 +2134,7 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 
 
 
-#
+
 # --- [ 9 ] ---
 #
 # ==============================================================================
