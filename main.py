@@ -195,7 +195,7 @@ YTDL_OPTIONS = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
-    'cookiefile': 'www.youtube.com_cookies.txt, 
+    'cookiefile': 'www.youtube.com_cookies.txt',
     'cachedir' : 'False',
     # [FIX 1]: Menghapus 'audioformat' dan 'extractaudio'. 
     # Kita melakukan direct streaming, bukan konversi file lokal. 
