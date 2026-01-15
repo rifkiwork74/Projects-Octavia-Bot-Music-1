@@ -221,18 +221,17 @@ FFMPEG_OPTIONS = {
         '-reconnect 1 '
         '-reconnect_streamed 1 '
         '-reconnect_delay_max 5 '
-        '-reconnect_at_eof 1 ' # Mencegah skip jika koneksi putus di akhir lagu
+        '-reconnect_at_eof 1 '
         '-nostdin '
         '-ss 00:00:00 '
-        '-threads 2'
+        '-threads 1' # Di hosting, 1 thread seringkali lebih stabil untuk audio
     ),
     'options': (
         '-vn '
-        '-nostats '
-        '-loglevel warning '
-        '-bufsize 2048k ' # Buffer lebih besar untuk koneksi tidak stabil
-        # Filter aresample=async=1 menjaga sinkronisasi audio jika terjadi reconnect
-        '-af "asetpts=PTS-STARTPTS,aresample=async=1:min_hard_comp=0.01,loudnorm=I=-11:TP=-1.0:LRA=9,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
+        '-loglevel panic ' # Mengurangi log agar tidak memenuhi storage hosting
+        '-bufsize 4096k ' # Menaikkan buffer sedikit lagi
+        # Sederhanakan filter:
+        '-af "asetpts=N/SR/TB,aresample=48000:async=1,loudnorm=I=-11:TP=-1.5:LRA=11"'
     ),
 }
 
