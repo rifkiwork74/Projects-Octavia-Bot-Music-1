@@ -397,37 +397,45 @@ def bootstrap():
 
 
 
-#
-# 🔘▬ 4.3.  :	Function Progress Bar (REFINED PRECISION)
-# ------------------------------------------------------------------------------
-#
-#
+
+
+# ==============================================================================
+# 🔘▬ 4.3. : Function Progress Bar (DYNAMIC SCALE VERSION)
+# ==============================================================================
 def create_progress_bar(current, total):
-    if total <= 0:
-        return "🔴 " + "─" * 20 + " [LIVE]"
-        
-    bar_size = 18  # Ukuran pas agar tidak pecah di tampilan HP
+    """
+    Progress Bar yang panjangnya menyesuaikan durasi lagu (Dynamic Scaling).
+    """
+    # Tentukan panjang bar berdasarkan durasi agar responsif
+    if total < 300:        # Dibawah 5 menit (Bar Pendek)
+        length = 12
+    elif total < 1800:     # 5 - 30 menit (Bar Sedang)
+        length = 20
+    else:                  # Diatas 30 menit / 1 jam (Bar Panjang)
+        length = 30
+
+    if total <= 0: return "0:00 ▬🔘▬▬▬▬▬▬▬▬▬ 0:00"
+    
+    # Hitung posisi titik 🔘
     percentage = current / total
-    progress = max(0, min(int(percentage * bar_size), bar_size))
+    progress = int(length * percentage)
+    progress = min(progress, length - 1)
     
-    # Karakter blok (█) untuk yang sudah jalan, dan garis (─) untuk sisanya
-    bar_filled = "█" * progress
-    bar_empty = "─" * (bar_size - progress)
+    # Gambar Bar (Garis ▬ dan Pointer 🔘)
+    bar = "▬" * progress + "🔘" + "▬" * (max(0, length - progress - 1))
     
-    return f"{bar_filled}{bar_empty}"
+    return bar
 
 
 
 
 
-
-#
-# 🖼️ 4.4.  :	Function Dashboard (SINKRONISASI MODEREN)
-# ------------------------------------------------------------------------------
-#
-#
+# ==============================================================================
+# 🖼️ 4.4. : Function Dashboard (SINKRONISASI MODEREN)
+# ==============================================================================
 def buat_embed_dashboard(q, elapsed_time, duration, title, url, thumbnail, user):
     warna = 0x2ecc71 if q.loop else 0x2b2d31
+    # Memanggil fungsi progress bar yang baru
     bar_visual = create_progress_bar(elapsed_time, duration)
     
     time_now = format_time(elapsed_time)
@@ -442,16 +450,15 @@ def buat_embed_dashboard(q, elapsed_time, duration, title, url, thumbnail, user)
         icon_url="https://cdn.pixabay.com/animation/2022/12/25/06/28/06-28-22-725_512.gif"
     )
     
-    # Judul dan Progress Bar dalam satu kotak visual
+    # Embed tetap sesuai gaya asli kamu (menggunakan kotak code block)
     embed.description = (
         f"### 🎵 [{title[:60]}]({url})\n"
         f"```\n"
-        f"{bar_visual}\n"
-        f"  {time_now} / {time_total} ⏳\n"
+        f"{time_now} {bar_visual} {time_total}\n"
+        f"      ⏳ Status: {'Playing' if not q.pause_time else 'Paused'}\n"
         f"```"
     )
     
-    # Field disusun simetris (3 di atas, 1 di bawah)
     embed.add_field(name="🛰️ Server", value="`Jakarta-ID`", inline=True)
     embed.add_field(name=f"{vol_emoji} Volume", value=f"`{vol_percent}%`", inline=True)
     embed.add_field(name="🔁 Loop", value=f"`{'ON' if q.loop else 'OFF'}`", inline=True)
@@ -466,6 +473,7 @@ def buat_embed_dashboard(q, elapsed_time, duration, title, url, thumbnail, user)
     )
     
     return embed
+
 
 
 
@@ -1557,7 +1565,7 @@ async def play(interaction: discord.Interaction, cari: str):
         return
 
     # 2. Jika input adalah JUDUL (Tampilkan 5 Pilihan)
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     
     def safe_search():
         with yt_dlp.YoutubeDL({'extract_flat': True, 'quiet': True}) as ydl:
