@@ -10,7 +10,7 @@
 """
 
 
-DESCRIPTION KUH	:
+DESCRIPTION KUUUHH	:
 		
 			Bot musik profesional dengan sistem Interactive Dashboard, High-Fidelity Audio,
 			dan manajemen antrean cerdas. Dioptimalkan untuk Python 3.10.
