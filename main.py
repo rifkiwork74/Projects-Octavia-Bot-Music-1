@@ -1393,9 +1393,8 @@ async def next_logic(guild_id):
 
 
 
-#
-#
-# 🎵 6.6 : LOGIKA PLAY MUSIC (SINKRONISASI NOTIFIKASI)
+# ------------------------------------------------------------------------------
+# 🎵 6.6 : LOGIKA PLAY MUSIC (SINKRONISASI NOTIFIKASI) - FIXED
 # ------------------------------------------------------------------------------
 async def play_music(interaction, search, is_next=False):
     if not interaction.response.is_done():
@@ -1434,25 +1433,26 @@ async def play_music(interaction, search, is_next=False):
                 q.queue.append(song_data)
                 posisi = f"Nomor {len(q.queue)}"
 
-            # Kirim Embed "Added to Queue" (Visual Kotak Biru)
-            # Hapus pesan added_to_queue yang lama jika ada
+            # Kirim Embed "Added to Queue"
             if hasattr(q, 'last_msg') and q.last_msg:
                 try: await q.last_msg.delete()
                 except: pass
 
             emb_queue = buat_embed_added_queue(data['title'], data['webpage_url'], data.get('thumbnail'), interaction.user, posisi)
+            # Followup send untuk Webhook TIDAK boleh pakai delete_after
             q.last_msg = await interaction.followup.send(embed=emb_queue)
             
         else:
             # --- [ LANGSUNG PUTAR ] ---
             q.last_msg = None
-            await interaction.followup.send(f"🎶 **Memulai Sesi:** {data['title'][:50]}...", delete_after=5)
+            # PERBAIKAN DI SINI: Menghapus delete_after agar tidak error
+            await interaction.followup.send(f"🎶 **Memulai Sesi:** {data['title'][:50]}...")
             await start_stream(interaction, data['webpage_url'])
 
     except Exception as e:
         logger.error(f"Play Music Error: {e}")
+        # Followup di sini juga dipastikan bersih dari parameter aneh
         await interaction.followup.send("⚠️ Gagal memproses permintaan musik.", ephemeral=True)
-
 
 
 
