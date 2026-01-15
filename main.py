@@ -224,14 +224,12 @@ FFMPEG_OPTIONS = {
         '-threads 2'
     ),
     'options': (
-        '-vn '
-        '-nostats '
-        '-loglevel warning '
-        '-af "asetpts=PTS-STARTPTS,'
-            'aresample=48000,' 
-            'loudnorm=I=-16:TP=-1.5:LRA=11,' 
-            'aresample=async=1"' # Mengunci sinkronisasi audio agar tidak patah
-    ),
+    '-vn '
+    '-nostats '
+    '-loglevel warning '
+    '-ignore_unknown ' # Tambahkan ini agar tidak gampang crash
+    '-af "asetpts=PTS-STARTPTS,aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=async=1"'
+	),
 }
 
 
@@ -588,7 +586,6 @@ def buat_embed_volume(persen, user):
 #
 class ModernBot(commands.Bot):
     def __init__(self):
-        # 1. Setup Intents & Konfigurasi Dasar
         intents = discord.Intents.default()
         intents.message_content = True
         intents.voice_states = True
@@ -600,62 +597,38 @@ class ModernBot(commands.Bot):
         )
 
     async def setup_hook(self):
-        """
-        SISTEM OTOMATIS LOAD COGS:
-        Bot akan memindai folder 'cogs' dan mengaktifkan semua modul di dalamnya.
-        """
-        print("📂 Memulai proses pemindaian modul Cogs...")
-        
-        # Buat folder cogs otomatis jika belum ada (Safe Guard)
-        if not os.path.exists('./cogs'):
-            os.makedirs('./cogs')
-            logger.info("📁 Folder 'cogs' dibuat secara otomatis.")
-
-        # Loop pemindaian file .py di dalam folder cogs
-        for filename in os.listdir('./cogs'):
-            if filename.endswith('.py'):
-                try:
-                    # Memuat extension (contoh: cogs.music_engine)
-                    await self.load_extension(f'cogs.{filename[:-3]}')
-                    logger.info(f"✅ Modul [{filename}] berhasil dimuat.")
-                except Exception as e:
-                    logger.error(f"❌ Gagal memuat modul {filename}: {e}")
-
-        # Sinkronisasi Global Slash Commands
+        # Kita hapus Loop Cogs di sini agar bot tidak bingung mencari folder
         try:
             synced = await self.tree.sync()
-            logger.info(f"🛰️ {len(synced)} Slash Commands disinkronkan ke Discord.")
+            logger.info(f"🛰️ {len(synced)} Slash Commands disinkronkan secara Global.")
         except Exception as e:
             logger.error(f"❌ Gagal sinkronisasi command: {e}")
 
     async def on_ready(self):
-        """Notifikasi Online System (Optimized for Python 3.10)"""
-        # Status Bot
+        """Notifikasi Online System - PAKAI EMBED ASLI KAMU"""
         activity = discord.Activity(
             type=discord.ActivityType.listening, 
             name="/play | Angelss V17"
         )
         await self.change_presence(status=discord.Status.online, activity=activity)
 
-        # Target Channel Notification
         target_channel_id = 1456250414638043169 
         channel = self.get_channel(target_channel_id)
         
         if channel:
-            # Clean Up History (RAM Guard)
+            # Clean Up History agar tidak spam
             try:
                 async for message in channel.history(limit=10):
                     if message.author == self.user:
                         await message.delete()
-            except Exception as e:
-                logger.warning(f"Cleanup Error: {e}")
+            except: pass
 
-            # Rakit Embed (Tetap menggunakan style Angelss Project)
+            # --- EMBED ASLI KAMU (DIKEMBALIKAN) ---
             embed = discord.Embed(
                 title="🚀 SYSTEM RELOADED & UPDATED",
                 description=(
-                    "**Bot telah online dan modul Cogs berhasil dimuat!**\n"
-                    "Arsitektur bot kini menggunakan sistem Modular (Cogs) untuk stabilitas tinggi."
+                    "**Bot telah online dan sistem siap digunakan!**\n"
+                    "Arsitektur bot menggunakan mode **Standard Monolithic** untuk performa maksimal."
                 ),
                 color=0x2ecc71 
             )
@@ -664,7 +637,7 @@ class ModernBot(commands.Bot):
             latensi = round(self.latency * 1000) if self.latency else "---"
             embed.add_field(name="🛰️ Cluster", value="`Jakarta-ID`", inline=True)
             embed.add_field(name="⚡ Latency", value=f"`{latensi}ms`", inline=True)
-            embed.add_field(name="📦 Architecture", value="`Modular Cogs`", inline=True)
+            embed.add_field(name="📦 Architecture", value="`Standard Production`", inline=True)
             embed.add_field(name="📅 System Ready", value=f"`{datetime.datetime.now().strftime('%d/%m/%Y %H:%M')} WIB`", inline=False)
 
             embed.set_footer(text="Angelss Project Final Fix • Powered by ikiii", icon_url=self.user.display_avatar.url)
@@ -672,11 +645,9 @@ class ModernBot(commands.Bot):
             
             await channel.send(embed=embed)
         
-        # Console Log Standard
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print(f"✅ COG SYSTEM ONLINE : {self.user.name}")
-        print(f"📡 STATUS            : All Systems Operational")
-        print(f"📅 STARTED AT        : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"✅ SYSTEM ONLINE : {self.user.name}")
+        print(f"📡 STATUS        : All Systems Operational")
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 bot = ModernBot()
@@ -1417,20 +1388,24 @@ async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
 #
 async def next_logic(guild_id):
     q = get_queue(guild_id)
-    await asyncio.sleep(1.5) # Jeda anti-spam API Discord
+    
+    # Tunggu sebentar untuk memastikan engine FFmpeg benar-benar tertutup
+    await asyncio.sleep(2) 
     
     if q.queue:
         next_song = q.queue.popleft()
+        # PENTING: Gunakan start_stream untuk memutar lagu berikutnya
         await start_stream(None, next_song['url'], guild_id_manual=guild_id)
     else:
+        # Jika antrean habis
         if q.last_dashboard:
             try: await q.last_dashboard.delete()
             except: pass
             q.last_dashboard = None
         
         chan = bot.get_channel(q.text_channel_id)
-        if chan: await chan.send("✅ **Antrean selesai.**", delete_after=10)
-
+        if chan: 
+            await chan.send("✅ **Antrean selesai. Bot standby.**", delete_after=10)
 
 
 
