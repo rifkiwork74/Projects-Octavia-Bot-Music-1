@@ -148,7 +148,7 @@ logger = logging.getLogger('AngelssProject')
 #
 #
 TOKEN = os.getenv('DISCORD_TOKEN') # Menggunakan os.getenv lebih aman daripada os.environ.get
-COOKIES_FILE = 'youtube_cookies.txt'
+COOKIES_FILE = 'www.youtube.com_cookies.txt'
 
 
 
@@ -195,7 +195,7 @@ YTDL_OPTIONS = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
-    'cookiefile': 'youtube_cookies.txt', 
+    'cookiefile': 'www.youtube.com_cookies.txt, 
     'cachedir' : 'False',
     # [FIX 1]: Menghapus 'audioformat' dan 'extractaudio'. 
     # Kita melakukan direct streaming, bukan konversi file lokal. 
