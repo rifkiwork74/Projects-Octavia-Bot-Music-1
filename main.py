@@ -222,12 +222,12 @@ FFMPEG_OPTIONS = {
         '-loglevel warning '
         '-af "asetpts=PTS-STARTPTS,'
             'aresample=48000:resampler=soxr:precision=28,'
-            'loudnorm=I=-15:TP=-1.5:LRA=11,' 
+            'loudnorm=I=-15:TP=-1.5:LRA=11,' # Lebih natural, tidak terlalu "terkompresi"
             'aresample=async=1"'
     ),
 }
 
- 
+
 
 
 
@@ -268,7 +268,7 @@ class MusicQueue:
         self.pause_time = 0
         self.lock = asyncio.Lock() 
         self.is_seeking = False  # <--- Perbaiki indentasi di sini (Gunakan spasi, jangan TAB)
-        self.temp_messages = [] # <--- [TAMBAHKAN INI] Keranjang sampah pesan
+
 
     def clear_all(self):
         self.queue.clear()
@@ -568,13 +568,11 @@ class ModernBot(commands.Bot):
         )
 
     async def setup_hook(self):
-        """Sinkronisasi command global yang stabil untuk banyak server."""
+        """Sinkronisasi command saat bot start dengan error handling."""
         try:
-            # Sync secara global (untuk semua server)
+            # SINKRONISASI GLOBAL (Wajib agar /command muncul)
             synced = await self.tree.sync()
-            print(f"✅ GLOBAL SYNC: {len(synced)} commands terdaftar di seluruh server.")
-        except discord.errors.Forbidden:
-            logger.error("❌ Gagal Sync: Cek apakah bot memiliki scope 'applications.commands'.")
+            logger.info(f"✅ Berhasil sinkronisasi {len(synced)} slash commands secara global.")
         except Exception as e:
             logger.error(f"❌ Gagal sinkronisasi command: {e}")
 
@@ -657,37 +655,6 @@ bot = ModernBot()
 
 
 
-#
-# 🗑️ 4.9.  :	Fungsi auto_clean_ups (Pembersih Sampah)
-# ------------------------------------------------------------------------------
-#
-#
-async def auto_clean_ups(guild_id):
-    """
-    Menghapus semua pesan temporary (hasil pencarian, info volume, dll)
-    agar channel tetap rapi dan hanya menyisakan Dashboard.
-    """
-    q = get_queue(guild_id)
-    if not q.temp_messages:
-        return
-
-    # Salin list agar tidak terjadi error 'size changed during iteration'
-    messages_to_delete = list(q.temp_messages)
-    q.temp_messages.clear() # Langsung kosongkan list di queue
-
-    for msg in messages_to_delete:
-        try:
-            # Jika pesan berupa InteractionMessage (dari followup)
-            if hasattr(msg, 'delete'):
-                await msg.delete()
-        except Exception:
-            # Abaikan jika pesan sudah dihapus manual atau sudah hilang
-            pass
-
-
-
-
-
 
 
 
@@ -703,12 +670,13 @@ async def auto_clean_ups(guild_id):
 # ==============================================================================
  
 #
-#
-# 🔍 5.1. :	Class System Search Engine Pilihan (AUDITED & STABLE)
+# 🔍 5.1. :	Class System Search Engine Pilihan
 # ------------------------------------------------------------------------------
+#
 #
 class SearchControlView(discord.ui.View):
     def __init__(self, entries, user):
+        # Gunakan timeout agar tidak membebani RAM hosting
         super().__init__(timeout=60) 
         self.entries = entries
         self.user = user
@@ -719,6 +687,7 @@ class SearchControlView(discord.ui.View):
         options = []
         for i, entry in enumerate(self.entries):
             title = entry.get('title', 'Judul tidak diketahui')[:50]
+            # Mengambil URL yang valid
             url = entry.get('url') or entry.get('webpage_url')
             options.append(discord.SelectOption(
                 label=f"Lagu Nomor {i+1}", 
@@ -730,23 +699,24 @@ class SearchControlView(discord.ui.View):
         select = discord.ui.Select(placeholder="🎯 Pilih lagu untuk ditambahkan...", options=options)
         
         async def callback(interaction: discord.Interaction):
+            # 1. Cek Permission User
             if interaction.user != self.user:
                 return await interaction.response.send_message(
                     f"⚠️ **Ups!** Hanya {self.user.mention} yang bisa memilih lagu.", 
                     ephemeral=True
                 )
             
+            # 2. Defer agar bot punya waktu ambil metadata
             await interaction.response.defer()
+            
+            # 3. Ambil URL lagu yang dipilih
             selected_url = select.values[0]
             
-            # [1] Bersihkan pesan sampah sebelumnya (Auto-Clean) agar transisi mulus
-            q = get_queue(interaction.guild_id)
-            await auto_clean_ups(interaction.guild_id)
-            
-            # [2] Jalankan logika play
+            # 4. Panggil play_music (Ini akan otomatis masuk Queue jika ada lagu yang sedang jalan)
             await play_music(interaction, selected_url)
             
-            # [3] Update status pencarian (Visual Feedback)
+            # 5. [FIXED] Edit pesan pencarian agar user tahu lagu berhasil masuk
+            # Kita tidak menghapus view=None di sini supaya user bisa lihat statusnya
             status_embed = self.create_embed()
             status_embed.add_field(
                 name="✅ Berhasil Ditambahkan", 
@@ -754,16 +724,16 @@ class SearchControlView(discord.ui.View):
                 inline=False
             )
             
-            # Edit pesan menjadi status sukses
+            # Memberi tahu bahwa pilihan sukses tanpa merusak menu
             await interaction.edit_original_response(embed=status_embed, view=None)
             
-            # [4] Delay pembersihan final (Industrial Standard)
-            await asyncio.sleep(3)
+            # Tunggu 5 detik lalu bersihkan pesan pencarian agar chat rapi (Level Industri)
+            await asyncio.sleep(5)
             try:
-                # Hapus menu pencarian agar chat benar-benar bersih hanya tersisa Dashboard
                 await interaction.delete_original_response()
             except:
                 pass
+
 
         select.callback = callback
         self.add_item(select)
@@ -772,19 +742,16 @@ class SearchControlView(discord.ui.View):
         btn_close = discord.ui.Button(label="Tutup", style=discord.ButtonStyle.danger, emoji="🗑️")
         async def close_callback(interaction: discord.Interaction):
             if interaction.user == self.user:
-                try:
-                    await interaction.message.delete()
-                except:
-                    pass
+                await interaction.message.delete()
             else:
                 await interaction.response.send_message("❌ Kamu tidak berhak menutup ini!", ephemeral=True)
         btn_close.callback = close_callback
         self.add_item(btn_close)
 
     def create_embed(self):
-        # --- [ VISUAL EMBED TETAP SESUAI ASLI ] ---
         description = "📺 **YouTube Search Engine**\n*(Pilih nomor lagu di bawah ini)*\n\n"
         for i, entry in enumerate(self.entries):
+            # Membatasi judul agar tidak kepanjangan di embed
             judul = entry.get('title', 'Unknown Title')
             description += f"✨ `{i+1}.` {judul[:60]}...\n"
             
@@ -796,14 +763,14 @@ class SearchControlView(discord.ui.View):
         )
         return embed
 
+    # Jika waktu habis (timeout), hapus menu select agar tidak error saat diklik nanti
     async def on_timeout(self):
         try:
-            # Jika timeout, hapus view agar tidak bisa diklik lagi (Anti-Error)
+            # Mengosongkan view saat timeout
             if hasattr(self, 'message') and self.message:
                 await self.message.edit(view=None)
         except:
             pass
-
 
 
 
@@ -888,6 +855,47 @@ class VolumeControlView(discord.ui.View):
 
 
 
+
+
+
+
+
+#
+# 📋 5.3.  : UI Class: Queue Selector (LOMPAT KE LAGU TERTENTU)
+# ------------------------------------------------------------------------------
+#
+class QueueControlView(discord.ui.View):
+    def __init__(self, guild_id, user, options):
+        super().__init__(timeout=60)
+        self.guild_id = guild_id
+        self.user = user
+        select = discord.ui.Select(placeholder="🎯 Pilih lagu untuk langsung diputar...", options=options)
+        select.callback = self.callback
+        self.add_item(select)
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user != self.user:
+            return await interaction.response.send_message("⚠️ Hanya pemanggil yang bisa memilih!", ephemeral=True)
+        
+        q = get_queue(self.guild_id)
+        vc = interaction.guild.voice_client
+        index_dipilih = int(interaction.data['values'][0])
+        
+        # Logika YouTube: Buang lagu sebelum pilihan
+        for _ in range(index_dipilih):
+            q.queue.popleft()
+            
+        if vc:
+            q.is_seeking = False # Biarkan sistem next_logic bekerja normal
+            vc.stop()
+            await interaction.response.send_message(f"🚀 **Melompat ke lagu pilihanmu!**", ephemeral=True)
+
+
+
+
+
+
+#
 #
 # 📼 5.3.  :	Ui Class: Dashboard & Audio - Player (PREMIUM SEAMLESS VERSION)
 # ------------------------------------------------------------------------------
@@ -1016,41 +1024,6 @@ class MusicDashboard(discord.ui.View):
 
 
 
-#
-# 📋 5.4.  : UI Class: Queue Selector (LOMPAT KE LAGU TERTENTU)
-# ------------------------------------------------------------------------------
-#
-class QueueControlView(discord.ui.View):
-    def __init__(self, guild_id, user, options):
-        super().__init__(timeout=60)
-        self.guild_id = guild_id
-        self.user = user
-        select = discord.ui.Select(placeholder="🎯 Pilih lagu untuk langsung diputar...", options=options)
-        select.callback = self.callback
-        self.add_item(select)
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user != self.user:
-            return await interaction.response.send_message("⚠️ Hanya pemanggil yang bisa memilih!", ephemeral=True)
-        
-        q = get_queue(self.guild_id)
-        vc = interaction.guild.voice_client
-        index_dipilih = int(interaction.data['values'][0])
-        
-        # Logika YouTube: Buang lagu sebelum pilihan
-        for _ in range(index_dipilih):
-            q.queue.popleft()
-            
-        if vc:
-            q.is_seeking = False # Biarkan sistem next_logic bekerja normal
-            vc.stop()
-            await interaction.response.send_message(f"🚀 **Melompat ke lagu pilihanmu!**", ephemeral=True)
-
-
-
-
-
-
 
 
 
@@ -1127,7 +1100,6 @@ async def update_player_interface(message, duration, title, url, thumbnail, user
         logger.error(f"Error Kritis pada Update Interface: {e}")
     finally:
         pass
-        
 
 
 
@@ -1236,7 +1208,6 @@ async def sync_dashboard_buttons(message, guild_id):
 
 
 
-#
 #
 # 📡 6.4 : MESIN UTAMA - START STREAM (ULTIMATE STABLE + SMART ERROR HANDLER)
 # ------------------------------------------------------------------------------
@@ -1403,10 +1374,6 @@ async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
 #
 async def next_logic(guild_id):
     q = get_queue(guild_id)
-    
-    # --- [ EKSEKUSI AUTO-CLEAN ] ---
-    await auto_clean_ups(guild_id) # Bersihkan sampah lagu sebelumnya
-    
     await asyncio.sleep(1.5) # Jeda anti-spam API Discord
     
     if q.queue:
@@ -1428,71 +1395,130 @@ async def next_logic(guild_id):
 
 
 #
-#
-# 🎮 6.6 : GATEWAY PEMUTAR (PLAY CONTROL) - AUDIT FIX (SYNCED)
+# 🎮 6.6 : GATEWAY PEMUTAR (PLAY CONTROL) - AUDIT FIX
 # ------------------------------------------------------------------------------
 #
 #
-# --- DI SECTION 6.6 (VERSI FIX) ---
 async def play_music(interaction, url):
+    # 1. Ambil queue data
     q = get_queue(interaction.guild_id)
     q.text_channel_id = interaction.channel.id
+    
+    # 2. DEFINISIKAN VC (Penting: agar variabel 'vc' terbaca di bawah)
     vc = interaction.guild.voice_client
     
-    # Langsung ke cek koneksi, jangan pakai defer lagi di sini!
+    # 3. CEK KONEKSI (Jika bot belum masuk VC, suruh masuk dulu)
     if not vc:
         if interaction.user.voice:
             vc = await interaction.user.voice.channel.connect()
         else:
-            await interaction.followup.send("❌ Masuk ke Voice dulu kii!", ephemeral=True)
+            # Jika user tidak di VC, kirim pesan dan stop
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ Masuk ke Voice dulu kii!", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ Masuk ke Voice dulu kii!", ephemeral=True)
             return
 
-    # 2. LOGIKA QUEUE VS DIRECT PLAY
+    # 4. PENANGANAN DEFER (Anti-Timeout)
+    # Ini supaya kalau proses ambil link YouTube lama, Discord tidak menganggap bot mati
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
+
+    # 5. LOGIKA QUEUE VS DIRECT PLAY
     if vc.is_playing() or vc.is_paused():
+        # JIKA SEDANG MAIN: Masukkan ke Antrean
         try:
+            # Ekstrak metadata di background (agar bot tidak freeze)
             data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
             if 'entries' in data: data = data['entries'][0]
             
+            # Tambahkan metadata ke deque (antrean)
             q.queue.append({
                 'title': data.get('title', 'Unknown Title'), 
                 'url': url, 
                 'thumbnail': data.get('thumbnail')
             })
             
-            emb = discord.Embed(title="📥 Antrean Ditambahkan", description=f"✨ **[{data['title']}]({url})**", color=0x3498db)
-            # Pakai followup.send agar tidak bentrok dengan defer-nya /play
-            notif_msg = await interaction.followup.send(embed=emb)
-            q.temp_messages.append(notif_msg)
+            # Kirim Embed Konfirmasi (Level Industri)
+            emb = discord.Embed(
+                title="📥 Antrean Ditambahkan", 
+                description=f"✨ **[{data['title']}]({url})**", 
+                color=0x3498db
+            )
+            emb.set_footer(text="Gunakan /queue untuk melihat semua daftar")
+            
+            await interaction.followup.send(embed=emb, ephemeral=True)
             
         except Exception as e:
+            logger.error(f"Error saat tambah antrean: {e}")
             await interaction.followup.send(f"⚠️ **Error:** Gagal mengambil data lagu.", ephemeral=True)
     else:
-        await auto_clean_ups(interaction.guild_id)
+        # JIKA DIAM: Langsung putar lagu pertama
         await start_stream(interaction, url)
 
 
 
 
 
-#
+
 #
 # 📜 6.7 : LOGIKA TAMPILAN ANTREAN (DYNAMIC & SELECTABLE)
 # ------------------------------------------------------------------------------
 #
 async def logic_tampilkan_antrean(interaction: discord.Interaction, guild_id):
     q = get_queue(guild_id)
+    
     if not q.queue:
-        return await (interaction.followup.send if interaction.response.is_done() else interaction.response.send_message)(content="📪 **Antrean kosong.**", ephemeral=True)
+        emb = discord.Embed(description="📪 **Antrean kosong.** Ayo tambahkan lagu dengan `/play`!", color=0x2b2d31)
+        if interaction.response.is_done():
+            return await interaction.followup.send(embed=emb, ephemeral=True)
+        else:
+            return await interaction.response.send_message(embed=emb, ephemeral=True)
     
-    options = [discord.SelectOption(label=f"Lagu {i+1}", description=item['title'][:50], value=str(i), emoji="🎵") 
-               for i, item in enumerate(list(q.queue)[:25])]
-    
-    deskripsi = "\n".join([f"`{i+1}.` {item['title'][:50]}" for i, item in enumerate(list(q.queue)[:10])])
+    # 1. Ambil daftar lagu (Maksimal 10 untuk tampilan Embed)
+    daftar = list(q.queue)
+    maks_tampil = 10
+    teks_lagu = []
+    options = [] # Untuk Select Menu
+
+    for i, item in enumerate(daftar):
+        judul = item['title'][:50]
+        # Teks untuk Embed
+        if i < maks_tampil:
+            teks_lagu.append(f"`{i+1}.` **{judul}**")
+        
+        # Opsi untuk Select Menu (Maksimal 25 sesuai limit Discord)
+        if i < 25:
+            options.append(discord.SelectOption(
+                label=f"Lagu ke-{i+1}",
+                description=judul,
+                value=str(i),
+                emoji="🎵"
+            ))
+
+    sisa = len(daftar) - maks_tampil
+    deskripsi = "\n".join(teks_lagu)
+    if sisa > 0: deskripsi += f"\n\n*...dan `{sisa}` lagu lainnya dalam antrean.*"
+
+    # 2. Rakit Embed
     emb = discord.Embed(title="📜 Live Music Queue", description=deskripsi, color=0x3498db)
-    if q.current_info: emb.add_field(name="▶️ Sedang Diputar", value=q.current_info['title'], inline=False)
+    if q.current_info:
+        emb.add_field(name="▶️ Sedang Diputar", value=f"**{q.current_info['title'][:60]}**", inline=False)
     
+    emb.set_footer(text=f"Total: {len(daftar)} Lagu • Pilih di bawah untuk melompat")
+
+    # 3. Kirim dengan View Baru
     view = QueueControlView(guild_id, interaction.user, options)
-    await (interaction.followup.send if interaction.response.is_done() else interaction.response.send_message)(embed=emb, view=view, ephemeral=True)
+    
+    if interaction.response.is_done():
+        msg = await interaction.followup.send(embed=emb, view=view, ephemeral=True)
+    else:
+        msg = await interaction.response.send_message(embed=emb, view=view, ephemeral=True)
+    
+    # Simpan message ke view agar bisa di-edit saat timeout
+    view.message = msg
+
+
 
 
 
@@ -1518,9 +1544,9 @@ async def logic_tampilkan_antrean(interaction: discord.Interaction, guild_id):
 
 
 #
-#
-#  ▶️ 7.1 : /play - System (INTEGRATED AUTO-CLEAN)
+#  ▶️ 7.1 : /play - System
 # ------------------------------------------------------------------------------
+#
 #
 @bot.tree.command(name="play", description="Putar musik menggunakan judul atau link YouTube")
 @app_commands.describe(cari="Masukkan Judul Lagu atau Link YouTube")
@@ -1531,7 +1557,7 @@ async def play(interaction: discord.Interaction, cari: str):
     
     q = get_queue(interaction.guild_id)
 
-    # --- [ TAMBAHAN AUTO-CLEAN: Bersihkan sisa-sisa pencarian lama ] ---
+    # Bersihkan sisa-sisa pencarian lama
     if q.last_search_msg:
         try: 
             await q.last_search_msg.delete()
@@ -1540,40 +1566,38 @@ async def play(interaction: discord.Interaction, cari: str):
 
     # --- [ LOGIKA A: INPUT ADALAH LINK ] ---
     if "http" in cari.lower(): 
-        # Simpan pesan status ke variable agar bisa didaftarkan ke temp_messages (jika tidak ephemeral)
-        status_msg = await interaction.followup.send("🔗 **Menganalisa tautan...**", ephemeral=True)
-        
+        await interaction.followup.send("🔗 **Menganalisa tautan...**", ephemeral=True)
+        # Tambahkan sedikit delay agar API Discord tidak kaget saat transisi ke start_stream
         await play_music(interaction, cari)
-        
-        final_msg = await interaction.edit_original_response(content=f"✅ **Tautan berhasil dianalisa.**")
-        # Masukkan ke daftar bersih-bersih jika pesan ini bersifat publik (bukan ephemeral)
-        if not interaction.ephemeral:
-            q.temp_messages.append(final_msg)
-            
-        return
+        return await interaction.edit_original_response(content=f"✅ **Tautan berhasil dianalisa.**")
     
     # --- [ LOGIKA B: INPUT ADALAH JUDUL (PENCARIAN) ] ---
     else:
         await interaction.followup.send(f"🔍 **Mencari:** `{cari}` di database YouTube...", ephemeral=True)
         
+        # Fungsi internal untuk pencarian yang lebih aman (di dalam run_in_executor)
         def safe_search():
             try:
                 search_config = YTDL_OPTIONS.copy()
                 search_config['extract_flat'] = True
                 with yt_dlp.YoutubeDL(search_config) as ydl:
+                    # Kita bungkus proses pencarian di dalam context manager 'with'
                     return ydl.extract_info(f"ytsearch5:{cari}", download=False)
             except Exception as e:
                 logger.error(f"Pencarian yt-dlp gagal: {e}")
                 return None
 
         try:
+            # Eksekusi pencarian secara asynchronous
             data = await bot.loop.run_in_executor(None, safe_search)
             
+            # Validasi hasil pencarian
             if not data or 'entries' not in data or not data['entries']:
                 return await interaction.edit_original_response(
                     content="❌ **Gagal:** Lagu tidak ditemukan. Pastikan judul benar atau coba gunakan link langsung."
                 )
             
+            # Ambil entri pencarian (limit 5) dan pastikan tidak ada data None
             entries = [e for e in data['entries'] if e is not None][:5]
             
             if not entries:
@@ -1582,24 +1606,18 @@ async def play(interaction: discord.Interaction, cari: str):
             # Panggil UI Dashboard Pencarian
             view = SearchControlView(entries, interaction.user)
             
-            # --- [ INTEGRASI AUTO-CLEAN ] ---
-            # Kirim hasil ke user dan simpan ke last_search_msg
+            # Kirim hasil ke user
             q.last_search_msg = await interaction.edit_original_response(
                 content="✨ **Berikut adalah hasil pencarian terbaik untukmu kii:**", 
                 embed=view.create_embed(), 
                 view=view
             )
-            
-            # Daftarkan pesan pencarian ini ke daftar sampah agar dihapus saat lagu mulai/ganti
-            if q.last_search_msg:
-                q.temp_messages.append(q.last_search_msg)
 
         except Exception as e:
             logger.error(f"Kritis pada System Play: {e}")
             await interaction.edit_original_response(
                 content="⚠️ **System Error:** Terjadi gangguan pada koneksi YouTube. Silahkan coba sesaat lagi."
             )
-
 
    
 
@@ -2150,5 +2168,3 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 if __name__ == "__main__":
     bootstrap()
     bot.run(TOKEN)
-
-
