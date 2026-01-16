@@ -177,7 +177,7 @@ COOKIES_FILE = 'www.youtube.com_cookies.txt'
 # ==============================================================================
 
 
-# --- [ 3.1: YTDL WAR-MODE CONFIG ] ---
+# --- [ 3.1: YTDL WAR-MODE CONFIG - UPDATED ] ---
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
@@ -192,46 +192,39 @@ YTDL_OPTIONS = {
     'source_address': '0.0.0.0',
     'cookiefile': COOKIES_FILE, 
     'cachedir': False,
-    # --- [ BYPASS TRICKS ] ---
+    # --- [ BYPASS TRICKS: PO-TOKEN & CLIENT SPOOFING ] ---
     'extractor_args': {
         'youtube': {
-            'player_client': ['android', 'ios', 'web'],
-            'po_token': ['web+web_embedded_player'], # Memicu bypass token terbaru
+            'player_client': ['android', 'ios'], # Menyamar sebagai HP lebih aman dari Web
+            'po_token': ['web+web_embedded_player'], 
         }
     },
-    'http_chunk_size': 10485760,
+    'http_chunk_size': 10485760, # Streaming lebih stabil
     'headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Origin': 'https://www.youtube.com',
-        'Referer': 'https://www.youtube.com/',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
         'Sec-Fetch-Mode': 'navigate',
     }
 }
 
-
-# --- [ 3.2: HIGH-FIDELITY AUDIO ENGINE ] ---
+# --- [ 3.2: HIGH-FIDELITY AUDIO ENGINE - OPTIMIZED ] ---
 FFMPEG_OPTIONS = {
     'before_options': (
         '-reconnect 1 '
         '-reconnect_streamed 1 '
         '-reconnect_delay_max 5 '
         '-reconnect_at_eof 1 '
-        '-nostdin '
-        '-threads 0' # Menggunakan seluruh core CPU yang tersedia untuk proses cepat
+        '-nostdin'
     ),
     'options': (
-        '-vn ' # Abaikan video
-        '-ac 2 ' # Stereo channel
-        '-ar 48000 ' # Resample ke 48kHz (Optimal untuk Discord)
-        #'-b:a 192k ' # Bitrate tinggi
-        '-af "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000:async=1" ' # Normalisasi suara premium
+        '-vn ' 
+        '-ac 2 ' 
+        '-ar 48000 ' 
+        '-af "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000:async=1" ' 
         '-loglevel warning'
     ),
 }
-
-
 
 
 
@@ -1176,95 +1169,126 @@ async def sync_dashboard_buttons(message, guild_id):
 
 
 
-# 📡 6.4 : MESIN UTAMA - START STREAM (ULTIMATE SINGLE MESSAGE VERSION)
-# ------------------------------------------------------------------------------
+
+# ==============================================================================
+# 📡 6.4 : MESIN UTAMA - START STREAM (STABILIZED & ANTI-403)
+# ==============================================================================
 async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
+    # 1. Identifikasi Guild & Queue
     g_id = interaction.guild.id if interaction else guild_id_manual
     if not g_id: return
     
     q = get_queue(g_id)
-    if interaction: q.text_channel_id = interaction.channel.id
+    if interaction: 
+        q.text_channel_id = interaction.channel.id
 
     guild = bot.get_guild(g_id)
     vc = guild.voice_client if guild else None
     
     if not vc:
-        logger.error(f"Bot tidak terdeteksi di VC pada Guild {g_id}")
+        logger.error(f"⚠️ [Guild {g_id}] Voice Client tidak ditemukan!")
         return
 
-    # --- [ FIX DASHBOARD PERSISTENCE ] ---
+    # 2. Defer Interaction agar tidak 'Interaction Failed'
     if interaction and not interaction.response.is_done():
         try: await interaction.response.defer(ephemeral=True)
         except: pass
 
+    # 3. Kunci Proses (Lock) untuk mencegah Double Play
     async with q.lock:
+        # Hentikan task update dashboard yang lama
         if q.update_task:
             q.update_task.cancel()
-
-        # Hapus Dashboard lama agar yang baru muncul di paling bawah
-        if q.last_dashboard:
-            try: 
-                await q.last_dashboard.delete()
-                q.last_dashboard = None
+            try: await q.update_task
             except: pass
 
+        # Bersihkan Dashboard lama agar chat tetap rapi
+        if q.last_dashboard:
+            try: await q.last_dashboard.delete()
+            except: pass
+            q.last_dashboard = None
+
         try:
+            # --- [ LOGIKA EKSTRAKSI METADATA DENGAN RETRY ] ---
             def fetch_info():
                 with yt_dlp.YoutubeDL(YTDL_OPTIONS) as ydl:
+                    # Mencoba ambil info dengan paksa
                     return ydl.extract_info(url, download=False)
 
-            data = await bot.loop.run_in_executor(None, fetch_info)
-            if not data: raise Exception("Metadata tidak ditemukan")
+            # Timeout 20 detik agar bot tidak hang jika YouTube lemot
+            data = await asyncio.wait_for(
+                bot.loop.run_in_executor(None, fetch_info), 
+                timeout=20.0
+            )
+
+            if not data: raise Exception("Metadata Kosong")
             if 'entries' in data: data = data['entries'][0]
             
             q.current_info = data
             stream_url = data.get('url') 
             q.total_duration = data.get('duration') or 0
             
+            # --- [ KONFIGURASI FFMPEG AUDIO ] ---
             ffmpeg_before = FFMPEG_OPTIONS['before_options']
-            if seek_time: ffmpeg_before += f" -ss {seek_time}"
+            if seek_time: 
+                ffmpeg_before += f" -ss {seek_time}"
 
-            audio_source = discord.FFmpegPCMAudio(stream_url, before_options=ffmpeg_before, options=FFMPEG_OPTIONS['options'])
+            # Inisialisasi Audio Source
+            audio_source = discord.FFmpegPCMAudio(
+                stream_url, 
+                before_options=ffmpeg_before, 
+                options=FFMPEG_OPTIONS['options']
+            )
             source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
 
+            # --- [ LOGIKA AFTER PLAYING (PEMBERSIH) ] ---
             def after_playing(error):
-                if getattr(q, 'is_seeking', False): return
+                if error:
+                    logger.error(f"❌ Player Error: {error}")
+                
+                if getattr(q, 'is_seeking', False): 
+                    return
+                
                 if q.update_task: 
                     bot.loop.call_soon_threadsafe(q.update_task.cancel)
                 
+                # Cek Loop atau Lanjut Antrean
                 if q.loop and q.current_info:
                     bot.loop.create_task(start_stream(None, q.current_info['webpage_url'], guild_id_manual=g_id))
                 else:
                     bot.loop.create_task(next_logic(g_id))
             
+            # Pastikan VC bersih sebelum play lagu baru
             if vc.is_playing() or vc.is_paused(): 
                 vc.stop()
             
-            await asyncio.sleep(0.5) 
+            await asyncio.sleep(0.5) # Jeda sinkronisasi engine
             vc.play(source, after=after_playing)
+            
+            # Catat waktu mulai (dikurangi posisi seek jika ada)
             q.start_time = time.time() - (float(seek_time) if seek_time else 0)
             
-            # --- [ KIRIM DASHBOARD ] ---
+            # --- [ KIRIM DASHBOARD INTERAKTIF ] ---
             channel = bot.get_channel(q.text_channel_id)
             if channel:
+                # Hapus notif "Ditambahkan ke antrean" sebelumnya
                 if hasattr(q, 'last_msg') and q.last_msg:
                     try: await q.last_msg.delete()
                     except: pass
                     q.last_msg = None
 
-                penerbit = data.get('requester')
-                if not penerbit:
-                    penerbit = interaction.user if interaction else bot.user
+                penerbit = data.get('requester') or (interaction.user if interaction else bot.user)
 
-                # Pakai Embed Dashboard Aslimu kii
                 emb = buat_embed_dashboard(
                     q, float(seek_time or 0), q.total_duration, 
                     data['title'], data['webpage_url'], 
                     data.get('thumbnail'), penerbit
                 )
                 
+                # Kirim Dashboard Baru dengan View Tombol
                 q.last_dashboard = await channel.send(embed=emb, view=MusicDashboard(g_id))
                 
+                # Jalankan Task Update Progress Bar (Real-time)
                 q.update_task = bot.loop.create_task(
                     update_player_interface(
                         q.last_dashboard, q.total_duration, 
@@ -1273,29 +1297,33 @@ async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
                     )
                 )
 
-        except Exception as e:
-            # --- [ KODE NOTIFIKASI ERROR ASLIMU (TETAP DIJAGA) ] ---
-            error_str = str(e)
-            logger.error(f"Kritis di Start Stream Guild {g_id}: {error_str}")
-            
-            chan = bot.get_channel(q.text_channel_id)
-            if chan:
-                if "403" in error_str:
-                    msg = "🚫 **YouTube Error (403):** Akses ditolak. Mencoba memutar lagu berikutnya..."
-                elif "sign in" in error_str.lower():
-                    msg = "🔞 **YouTube Error:** Lagu ini dibatasi umur (Age Restricted)."
-                elif "video unavailable" in error_str.lower():
-                    msg = "❌ **YouTube Error:** Video tidak tersedia/dihapus."
-                else:
-                    msg = f"⚠️ **Audio Error:** Masalah pada stream. `{error_str[:50]}...`"
-                
-                await chan.send(msg, delete_after=15)
-
-            if q.update_task:
-                q.update_task.cancel()
-
-            # Lanjut ke lagu berikutnya kalau error
+        except asyncio.TimeoutError:
+            msg = "🕒 **Error:** Koneksi ke YouTube timeout (Terlalu lama)."
+            await self._send_error_msg(g_id, msg)
             bot.loop.create_task(next_logic(g_id))
+
+        except Exception as e:
+            error_str = str(e)
+            logger.error(f"🔥 Critical Start Stream: {error_str}")
+            
+            # Logika Filter Pesan Error untuk User
+            if "403" in error_str:
+                msg = "🚫 **YouTube Blocked (403):** IP Server diblokir sementara. Coba lagu lain kii."
+            elif "sign in" in error_str.lower():
+                msg = "🔞 **YouTube Error:** Lagu ini butuh Login (Age Restricted)."
+            else:
+                msg = f"⚠️ **Audio Error:** Gagal memproses lagu. `{error_str[:60]}`"
+            
+            await self._send_error_msg(g_id, msg)
+            bot.loop.create_task(next_logic(g_id))
+
+# Helper Fungsi Error (Tambahkan di luar start_stream atau sebagai static)
+async def _send_error_msg(self, g_id, msg):
+    q = get_queue(g_id)
+    chan = bot.get_channel(q.text_channel_id)
+    if chan:
+        await chan.send(msg, delete_after=15)
+
 
 
 
@@ -2004,7 +2032,74 @@ async def debug_system(interaction: discord.Interaction):
 
 
 
+# --- [ 7.10 : /check - YOUTUBE CONNECTIVITY TEST ] ---
+@bot.tree.command(name="check", description="Cek status koneksi hosting ke YouTube (Anti-403 Test)")
+async def check_connection(interaction: discord.Interaction):
+    await interaction.response.defer()
+    
+    import http.client
+    import time
+    
+    status_report = "### 📡 SYSTEM CONNECTIVITY REPORT\n"
+    
+    # 1. Test Google (General Internet)
+    try:
+        start_t = time.time()
+        conn = http.client.HTTPSConnection("google.com", timeout=5)
+        conn.request("GET", "/")
+        res = conn.getresponse()
+        latency = round((time.time() - start_t) * 1000)
+        status_report += f"✅ **Internet:** Connected (`{latency}ms`)\n"
+        conn.close()
+    except Exception as e:
+        status_report += f"❌ **Internet:** Offline/Timeout (`{e}`)\n"
 
+    # 2. Test YouTube (403 Forbidden Check)
+    try:
+        start_t = time.time()
+        # Meniru browser untuk cek blokir
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        conn = http.client.HTTPSConnection("www.youtube.com", timeout=5)
+        conn.request("GET", "/", headers=headers)
+        res = conn.getresponse()
+        latency = round((time.time() - start_t) * 1000)
+        
+        if res.status == 200:
+            status_report += f"✅ **YouTube IP:** Clean (Status 200 OK - `{latency}ms`)\n"
+        elif res.status == 403:
+            status_report += f"🚫 **YouTube IP:** BLOCKED (Status 403 Forbidden)\n"
+        else:
+            status_report += f"⚠️ **YouTube IP:** Diverted (Status {res.status})\n"
+        conn.close()
+    except Exception as e:
+        status_report += f"❌ **YouTube IP:** Failed to connect (`{e}`)\n"
+
+    # 3. Cek Versi yt-dlp
+    try:
+        import yt_dlp
+        ver = yt_dlp.version.__version__
+        status_report += f"📦 **yt-dlp Engine:** `v{ver}`\n"
+    except:
+        status_report += f"📦 **yt-dlp Engine:** Not Found\n"
+
+    # Rakit Embed
+    embed = discord.Embed(
+        title="🛰️ Network Diagnostic",
+        description=status_report,
+        color=0x2ecc71 if "Clean" in status_report else 0xe74c3c
+    )
+    
+    # Tambahkan saran jika blokir terdeteksi
+    if "403" in status_report:
+        embed.add_field(
+            name="💡 Solusi Blokir", 
+            value="IP Hosting kamu sedang diblokir YouTube. Coba:\n1. Update Cookies\n2. Gunakan Proxy di YTDL_OPTIONS\n3. Hubungi Admin Hosting untuk ganti Node.",
+            inline=False
+        )
+    
+    embed.set_footer(text=f"Angelss Diagnostic Tool • {interaction.user.name}")
+    await interaction.followup.send(embed=embed)
+    
 
 
 
