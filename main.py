@@ -1462,13 +1462,26 @@ async def play_music(interaction, search):
     logger.error(f"Play Music Error: {e}")
     # Pastikan pesan error bersifat privat (ephemeral) agar tidak mengotori chat umum
     # dan tambahkan pengecekan agar tidak crash jika followup gagal
+        # ... (kode di atas try) ...
     try:
-        if interaction.response.is_done():
-            await interaction.followup.send(f"⚠️ **Sistem Error:** `{e}`", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"⚠️ **Sistem Error:** `{e}`", ephemeral=True)
-    except:
-        pass 
+        # Semua isi di dalam try harus masuk 4 spasi (1 tab)
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+        # ... (isi logika play music lainnya) ...
+
+    except Exception as e:
+        # Bagian except harus sejajar lurus dengan kata 'try'
+        logger.error(f"Play Music Error: {e}")
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(f"⚠️ **Sistem Error:** `{e}`", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"⚠️ **Sistem Error:** `{e}`", ephemeral=True)
+        except:
+            pass 
+            
+    
+    
 
         
 
