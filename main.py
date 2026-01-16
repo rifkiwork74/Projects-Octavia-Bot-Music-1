@@ -312,52 +312,8 @@ def delete_queue(guild_id):
 #			[ FUNCTION HELPER - DEF - OLD ]
 # ==============================================================================
 
-# --- [ 4.0.0 ] ---
-# ==============================================================================
-# 🧹 AUTO-CLEANER SYSTEM (STORAGE OPTIMIZER)
-# ==============================================================================
-def purge_system_trash():
-    """Menghapus .cache dan file sisa download agar storage tidak penuh"""
-    # Daftar folder/file yang biasanya jadi sampah
-    trash_targets = [
-        ".cache", 
-        "__pycache__", 
-        "youtube-dl", 
-        ".local/share/yt-dlp"
-    ]
-    
-    # Hapus file dengan ekstensi sampah di folder root
-    trash_extensions = [".webm", ".part", ".ytdl", ".mp3", ".m4a"]
 
-    print("🧹 Cleaning system trash...")
-    
-    # 1. Hapus Folder Sampah
-    for target in trash_targets:
-        if os.path.exists(target):
-            try:
-                if os.path.isdir(target):
-                    shutil.rmtree(target)
-                else:
-                    os.remove(target)
-                print(f"✅ Deleted: {target}")
-            except Exception as e:
-                print(f"⚠️ Cant delete {target}: {e}")
-
-    # 2. Hapus File Sisa di folder bot
-    for file in os.listdir("."):
-        if any(file.endswith(ext) for ext in trash_extensions):
-            try:
-                os.remove(file)
-                print(f"🗑️ Purged file: {file}")
-            except:
-                pass
-    
-    print("✨ System is now clean & ready!")
-
-# LANGSUNG JALANKAN SAAT FILE DI-LOAD
-purge_system_trash()
-
-
+  
 
 
 #
@@ -418,17 +374,7 @@ def bootstrap():
     print("   ANGELSS PROJECT V17 | STARTING SERVICE...")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     
-    # 1. Pembersihan file sampah saat startup
-    count = 0
-    for file in os.listdir('.'):
-        if file.endswith((".webm", ".m4a", ".mp3", ".part")):
-            try:
-                os.remove(file)
-                count += 1
-            except:
-                pass
-    if count > 0:
-        logger.info(f"Cleanup: Berhasil menghapus {count} file sampah.")
+
 
     # 2. Validasi Token
     if not TOKEN:
@@ -653,9 +599,6 @@ class ModernBot(commands.Bot):
             logger.error(f"❌ Gagal sinkronisasi command: {e}")
 
     async def on_ready(self):
-        # --- [ TAMBAHAN: AUTO CLEANER SAAT STARTUP ] ---
-        # Membersihkan sampah .cache & file sisa streaming di background
-        bot.loop.run_in_executor(None, purge_system_trash)
 
         # 1. Set Status
         activity = discord.Activity(type=discord.ActivityType.listening, name="/play | Angelss V17")
