@@ -1607,12 +1607,13 @@ class QueueControlView(discord.ui.View):
 
 # ▶️ 7.1 : /play - Search Engine (MODERN UI)
 # ------------------------------------------------------------------------------
-# --- [ SEKSI 7.1: /play (FINAL SINKRON) ] ---
+# --- [ SEKSI 7.1: /play (FINAL SINKRON - FIXED) ] ---
 @bot.tree.command(name="play", description="Putar musik dari YouTube")
 @app_commands.describe(cari="Masukkan judul lagu atau link YouTube")
 async def play(interaction: discord.Interaction, cari: str):
-    # 1. Anti-Timeout (Point 4)
-    await interaction.response.defer(ephemeral=False) 
+    # 1. Gunakan Defer di sini SAJA (Biarkan play_music yang mengatur sisanya)
+    # Gunakan ephemeral=True agar notifikasi "Bot is thinking" tidak mengotori chat umum
+    await interaction.response.defer(ephemeral=True) 
     
     # 2. Setup Context
     q = get_queue(interaction.guild.id)
@@ -1620,17 +1621,21 @@ async def play(interaction: discord.Interaction, cari: str):
 
     # 3. Validasi Voice Channel
     if not interaction.user.voice:
-        return await interaction.followup.send("❌ **Gagal:** Kamu harus berada di Voice Channel!")
+        return await interaction.followup.send("❌ **Gagal:** Kamu harus berada di Voice Channel!", ephemeral=True)
 
     try:
-        # 4. Panggil Logic Play Utama (Seksi 6.6)
-        # Fungsi ini sudah menangani pencarian, join VC, dan start_stream
+        # 4. Panggil Logic Play Utama
+        # Karena kita sudah defer di atas, play_music akan otomatis pakai followup.send
         await play_music(interaction, cari)
 
     except Exception as e:
         logger.error(f"Error Command Play: {e}")
-        if not interaction.response.is_done():
-            await interaction.followup.send(f"⚠️ Terjadi kesalahan: {e}")
+        # Jangan kirim pesan jika interaksi sudah selesai
+        try:
+            await interaction.followup.send(f"⚠️ Terjadi kesalahan: {e}", ephemeral=True)
+        except:
+            pass
+
 
 
 
