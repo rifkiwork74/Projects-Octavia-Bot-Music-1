@@ -179,39 +179,59 @@ COOKIES_FILE = 'www.youtube.com_cookies.txt'
 
 # --- [ 3.1: YTDL WAR-MODE CONFIG - UPDATED ] ---
 YTDL_OPTIONS = {
-    # 'bestaudio/best' sering gagal, gunakan 'ba/b' agar lebih ringan
-    'format': 'ba/b', 
+    #'format': 'bestaudio/best',
+    'format': 'bestaudio[abr<=160][ext=webm]/bestaudio/best',
+    #'audioformat': 'm4a',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
     'noplaylist': True,
     'nocheckcertificate': True,
-    'ignoreerrors': False,
+    'ignoreerrors': True,
     'logtostderr': False,
     'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
-    # Tambahkan source address untuk menghindari konflik IP di beberapa node hosting
-    'source_address': '0.0.0.0', 
-    'extract_flat': False,
-    'cookiefile': 'www.youtube.com_cookies.txt', # Pastikan nama file sesuai di hostingmu
+    'source_address': '0.0.0.0',
+    'cookiefile': 'www.youtube.com_cookies.txt',
+    'cachedir' : 'False',
+    # [FIX 1]: Menghapus 'audioformat' dan 'extractaudio'. 
+    # Kita melakukan direct streaming, bukan konversi file lokal. 
+    # Memaksa format di sini menambah latensi decoding.
+    
+    # [FIX 2]: High Network Optimization
+    # Buffer diperbesar ke 10MB untuk menampung lonjakan data tanpa putus
+    'http_chunk_size': 10485760, 
+    'expected_protocol': 'https',
+    'headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    }
 }
 
 
-# --- [ 3.2: HIGH-FIDELITY AUDIO ENGINE - OPTIMIZED ] ---
+
+#
+# 🔊 3.2: AUDIO SIGNAL & STREAMING OPTIONS (STABLE RECONNECT)
+# ------------------------------------------------------------------------------
+#
 FFMPEG_OPTIONS = {
     'before_options': (
         '-reconnect 1 '
         '-reconnect_streamed 1 '
         '-reconnect_delay_max 5 '
         '-reconnect_at_eof 1 '
-        '-nostdin'
+        '-nostdin '
+        '-ss 00:00:00 '
+        '-threads 1' # Di hosting, 1 thread seringkali lebih stabil untuk audio
     ),
     'options': (
-        '-vn ' 
-        '-ac 2 ' 
-        '-ar 48000 ' 
-        '-af "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000:async=1" ' 
-        '-loglevel warning'
+        '-vn '
+        '-loglevel panic ' # Mengurangi log agar tidak memenuhi storage hosting
+        '-bufsize 4096k ' # Menaikkan buffer sedikit lagi
+        # Sederhanakan filter:
+        '-af "asetpts=N/SR/TB,aresample=48000:async=1,loudnorm=I=-11:TP=-1.5:LRA=11"'
     ),
 }
+
 
 
 
@@ -1559,32 +1579,81 @@ class QueueControlView(discord.ui.View):
 #			SECTION: MUSIC COMMANDS (STANDARD)
 # ==============================================================================
 
-# ▶️ 7.1 : /play - Search Engine (MODERN UI)
+#
+#  ▶️ 7.1 : /play - System
 # ------------------------------------------------------------------------------
-# --- [ SEKSI 7.1: /play (FINAL SINKRON - FIXED) ] ---
-@bot.tree.command(name="play", description="Putar musik dari YouTube")
-@app_commands.describe(cari="Masukkan judul lagu atau link YouTube")
+#
+#
+@bot.tree.command(name="play", description="Putar musik menggunakan judul atau link YouTube")
+@app_commands.describe(cari="Masukkan Judul Lagu atau Link YouTube")
 async def play(interaction: discord.Interaction, cari: str):
-    # Gunakan defer di awal untuk mencegah "Interaction Failed"
-    # Pastikan ephemeral=True agar notifikasi proses bersifat privat
-    await interaction.response.defer(ephemeral=True) 
+    # 1. Defer wajib (ephemeral=True agar hanya user yang bersangkutan yang lihat prosesnya)
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
     
-    q = get_queue(interaction.guild.id)
-    q.text_channel_id = interaction.channel.id 
+    q = get_queue(interaction.guild_id)
 
-    if not interaction.user.voice:
-        return await interaction.followup.send("❌ **Gagal:** Kamu harus masuk Voice Channel dulu kii!", ephemeral=True)
-
-    try:
-        # Langsung panggil logika play_music
-        await play_music(interaction, cari)
-    except Exception as e:
-        logger.error(f"Error Command Play: {e}")
-        try:
-            await interaction.followup.send(f"⚠️ Terjadi kesalahan: {e}", ephemeral=True)
-        except:
+    # Bersihkan sisa-sisa pencarian lama
+    if q.last_search_msg:
+        try: 
+            await q.last_search_msg.delete()
+        except: 
             pass
 
+    # --- [ LOGIKA A: INPUT ADALAH LINK ] ---
+    if "http" in cari.lower(): 
+        await interaction.followup.send("🔗 **Menganalisa tautan...**", ephemeral=True)
+        # Tambahkan sedikit delay agar API Discord tidak kaget saat transisi ke start_stream
+        await play_music(interaction, cari)
+        return await interaction.edit_original_response(content=f"✅ **Tautan berhasil dianalisa.**")
+    
+    # --- [ LOGIKA B: INPUT ADALAH JUDUL (PENCARIAN) ] ---
+    else:
+        await interaction.followup.send(f"🔍 **Mencari:** `{cari}` di database YouTube...", ephemeral=True)
+        
+        # Fungsi internal untuk pencarian yang lebih aman (di dalam run_in_executor)
+        def safe_search():
+            try:
+                search_config = YTDL_OPTIONS.copy()
+                search_config['extract_flat'] = True
+                with yt_dlp.YoutubeDL(search_config) as ydl:
+                    # Kita bungkus proses pencarian di dalam context manager 'with'
+                    return ydl.extract_info(f"ytsearch5:{cari}", download=False)
+            except Exception as e:
+                logger.error(f"Pencarian yt-dlp gagal: {e}")
+                return None
+
+        try:
+            # Eksekusi pencarian secara asynchronous
+            data = await bot.loop.run_in_executor(None, safe_search)
+            
+            # Validasi hasil pencarian
+            if not data or 'entries' not in data or not data['entries']:
+                return await interaction.edit_original_response(
+                    content="❌ **Gagal:** Lagu tidak ditemukan. Pastikan judul benar atau coba gunakan link langsung."
+                )
+            
+            # Ambil entri pencarian (limit 5) dan pastikan tidak ada data None
+            entries = [e for e in data['entries'] if e is not None][:5]
+            
+            if not entries:
+                return await interaction.edit_original_response(content="❌ **Gagal:** Hasil pencarian kosong.")
+
+            # Panggil UI Dashboard Pencarian
+            view = SearchControlView(entries, interaction.user)
+            
+            # Kirim hasil ke user
+            q.last_search_msg = await interaction.edit_original_response(
+                content="✨ **Berikut adalah hasil pencarian terbaik untukmu kii:**", 
+                embed=view.create_embed(), 
+                view=view
+            )
+
+        except Exception as e:
+            logger.error(f"Kritis pada System Play: {e}")
+            await interaction.edit_original_response(
+                content="⚠️ **System Error:** Terjadi gangguan pada koneksi YouTube. Silahkan coba sesaat lagi."
+            )
 
 
 
