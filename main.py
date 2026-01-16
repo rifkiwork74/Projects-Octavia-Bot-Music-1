@@ -1466,9 +1466,61 @@ async def play_music(interaction, search):
 
 
 #
-# 📜 6.7 : LOGIKA TAMPILAN ANTREAN (DYNAMIC & SELECTABLE)
-# ------------------------------------------------------------------------------
-#
+# ==============================================================================
+# 📜 6.7 : LOGIKA TAMPILAN ANTREAN (DYNAMIC & SELECTABLE) - FINAL FIX
+# ==============================================================================
+
+async def logic_tampilkan_antrean(interaction, guild_id):
+    """Fungsi pusat untuk menampilkan daftar antrean lagu"""
+    q = get_queue(guild_id)
+    
+    if not q.queue and not q.current_info:
+        return await interaction.response.send_message("📭 **Antrean kosong kii!** Ayo tambahkan lagu pake `/play`.", ephemeral=True)
+
+    # 1. Header Antrean
+    embed = discord.Embed(title="📜 DAFTAR ANTREAN MUSIK", color=0x3498db)
+    
+    # 2. Info Lagu Saat Ini
+    if q.current_info:
+        embed.add_field(
+            name="🎧 Sedang Diputar", 
+            value=f"**[{q.current_info['title'][:60]}]({q.current_info['webpage_url']})**", 
+            inline=False
+        )
+
+    # 3. List Antrean (Maksimal 10 lagu untuk display)
+    description = ""
+    options = []
+    
+    if q.queue:
+        for i, song in enumerate(list(q.queue)[:15]):
+            description += f"`{i+1}.` {song['title'][:50]}...\n"
+            # Buat opsi untuk Select Menu (Max 25 sesuai limit Discord)
+            options.append(discord.SelectOption(
+                label=f"Lagu Ke-{i+1}", 
+                value=str(i), 
+                description=song['title'][:50], 
+                emoji="🎯"
+            ))
+        embed.description = f"**Selanjutnya:**\n{description}"
+    else:
+        embed.description = "*(Tidak ada lagu selanjutnya di antrean)*"
+
+    embed.set_footer(text=f"Total: {len(q.queue)} lagu dalam antrean")
+
+    # 4. Kirim dengan Select Menu jika ada antrean
+    if options:
+        view = QueueControlView(guild_id, interaction.user, options)
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed, view=view)
+        else:
+            await interaction.response.send_message(embed=embed, view=view)
+    else:
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed)
+        else:
+            await interaction.response.send_message(embed=embed)
+
 
 class QueueControlView(discord.ui.View):
     def __init__(self, guild_id, user, options):
@@ -1476,36 +1528,33 @@ class QueueControlView(discord.ui.View):
         self.guild_id = guild_id
         self.user = user
         
-        # Tambahkan Select Menu
         select = discord.ui.Select(
-            placeholder="🎯 Pilih nomor lagu untuk dilompati...",
+            placeholder="🎯 Pilih lagu untuk langsung diputar (Skip to)...",
             options=options
         )
         select.callback = self.select_callback
         self.add_item(select)
 
     async def select_callback(self, interaction: discord.Interaction):
-        # 1. Validasi User
         if interaction.user != self.user:
-            return await interaction.response.send_message("⚠️ Ini bukan antreanmu!", ephemeral=True)
+            return await interaction.response.send_message("⚠️ Ini bukan antreanmu kii!", ephemeral=True)
         
-        # 2. SEGERA EDIT MESSAGE (Agar Unknown Webhook Hilang)
-        # Kita hapus view/tombol segera setelah diklik agar tidak dipencet dua kali
+        # 1. Kasih feedback instan
         await interaction.response.edit_message(content="⌛ **Melompat ke lagu pilihan...**", view=None, embed=None)
         
-        # 3. Eksekusi Lompat Lagu
         q = get_queue(self.guild_id)
-        index = int(interaction.data['values'][0])
+        index_target = int(interaction.data['values'][0])
         
-        if 0 <= index < len(q.queue):
-            # Ambil lagu tujuan, hapus semua lagu sebelumnya di antrean
-            for _ in range(index):
+        if 0 <= index_target < len(q.queue):
+            # 2. Buang lagu-lagu sebelum target
+            for _ in range(index_target):
                 q.queue.popleft()
             
-            # Putar lagu tersebut
+            # 3. Ambil lagu target
             target_song = q.queue.popleft()
+            
+            # 4. PENTING: Eksekusi pemutaran
             await start_stream(None, target_song['url'], guild_id_manual=self.guild_id)
-
 
 
 
@@ -1680,7 +1729,6 @@ async def volume(interaction: discord.Interaction, persen: int):
 # ------------------------------------------------------------------------------
 @bot.tree.command(name="queue", description="Lihat daftar lagu yang akan diputar")
 async def queue_cmd(interaction: discord.Interaction):
-    # Memanggil fungsi pusat di Section 6.6
     await logic_tampilkan_antrean(interaction, interaction.guild_id)
 
 
