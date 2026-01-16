@@ -1400,7 +1400,10 @@ async def next_logic(guild_id):
 # ------------------------------------------------------------------------------
 # 🎵 6.6 : LOGIKA PLAY MUSIC (SINKRONISASI NOTIFIKASI & AUTO-JOIN) - UPDATED
 # ------------------------------------------------------------------------------
- async def play_music(interaction, search):
+ # ------------------------------------------------------------------------------
+# 🎵 6.6 : LOGIKA PLAY MUSIC (SINKRONISASI NOTIFIKASI & AUTO-JOIN)
+# ------------------------------------------------------------------------------
+async def play_music(interaction, search):
     q = get_queue(interaction.guild_id)
    
     try:
@@ -1459,7 +1462,7 @@ async def next_logic(guild_id):
             await start_stream(interaction, data['webpage_url'])
 
     except Exception as e:
-        # --- PERBAIKAN INDENTASI DI SINI ---
+        # --- FIX INDENTASI TOTAL DI SINI ---
         logger.error(f"Play Music Error: {e}")
         try:
             if interaction.response.is_done():
