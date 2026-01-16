@@ -179,9 +179,8 @@ COOKIES_FILE = 'www.youtube.com_cookies.txt'
 
 # --- [ 3.1: YTDL WAR-MODE CONFIG - UPDATED ] ---
 YTDL_OPTIONS = {
-    'format': 'bestaudio/best',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
+    # 'bestaudio/best' sering gagal, gunakan 'ba/b' agar lebih ringan
+    'format': 'ba/b', 
     'noplaylist': True,
     'nocheckcertificate': True,
     'ignoreerrors': False,
@@ -189,24 +188,12 @@ YTDL_OPTIONS = {
     'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
-    'source_address': '0.0.0.0',
-    'cookiefile': COOKIES_FILE, 
-    'cachedir': False,
-    # --- [ BYPASS TRICKS: PO-TOKEN & CLIENT SPOOFING ] ---
-    'extractor_args': {
-        'youtube': {
-            'player_client': ['android', 'ios'], # Menyamar sebagai HP lebih aman dari Web
-            'po_token': ['web+web_embedded_player'], 
-        }
-    },
-    'http_chunk_size': 10485760, # Streaming lebih stabil
-    'headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Sec-Fetch-Mode': 'navigate',
-    }
+    # Tambahkan source address untuk menghindari konflik IP di beberapa node hosting
+    'source_address': '0.0.0.0', 
+    'extract_flat': False,
+    'cookiefile': 'www.youtube.com_cookies.txt', # Pastikan nama file sesuai di hostingmu
 }
+
 
 # --- [ 3.2: HIGH-FIDELITY AUDIO ENGINE - OPTIMIZED ] ---
 FFMPEG_OPTIONS = {
