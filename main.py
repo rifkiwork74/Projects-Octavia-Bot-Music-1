@@ -181,32 +181,26 @@ COOKIES_FILE = 'www.youtube.com_cookies.txt'
 # ------------------------------------------------------------------------------
 #
 #
+# --- [ UPDATE DI SECTION 3.1 & 3.2 ] ---
 YTDL_OPTIONS = {
-    #'format': 'bestaudio/best',
-    'format': 'bestaudio[abr<=160][ext=webm]/bestaudio/best',
-    #'audioformat': 'm4a',
+    'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': True,
     'nocheckcertificate': True,
-    'ignoreerrors': True,
+    'ignoreerrors': False, # Set ke False agar kita bisa menangkap error-nya
     'logtostderr': False,
     'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
-    'cookiefile': 'www.youtube.com_cookies.txt', 
-    'cachedir' : 'False',
-    # [FIX 1]: Menghapus 'audioformat' dan 'extractaudio'. 
-    # Kita melakukan direct streaming, bukan konversi file lokal. 
-    # Memaksa format di sini menambah latensi decoding.
-    
-    # [FIX 2]: High Network Optimization
-    # Buffer diperbesar ke 10MB untuk menampung lonjakan data tanpa putus
-    'http_chunk_size': 10485760, 
-    'expected_protocol': 'https'
+    'cookiefile': COOKIES_FILE,
+    'cachedir': False,
+    'noprogress': True,
+    # Penambahan stabilitas streaming
+    'extract_flat': False,
+    'wait_for_video': (5, 10),
 }
-
 
 
 #
@@ -215,21 +209,12 @@ YTDL_OPTIONS = {
 #
 FFMPEG_OPTIONS = {
     'before_options': (
-        '-reconnect 1 '
-        '-reconnect_streamed 1 '
-        '-reconnect_delay_max 5 '
-        '-reconnect_at_eof 1 ' # Mencegah skip jika koneksi putus di akhir lagu
-        '-nostdin '
-        '-ss 00:00:00 '
-        '-threads 2'
+        '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 '
+        '-reconnect_at_eof 1 -nostdin'
     ),
     'options': (
-        '-vn '
-        '-nostats '
-        '-loglevel warning '
-        '-bufsize 2048k ' # Buffer lebih besar untuk koneksi tidak stabil
-        # Filter aresample=async=1 menjaga sinkronisasi audio jika terjadi reconnect
-        '-af "asetpts=PTS-STARTPTS,aresample=async=1:min_hard_comp=0.01,loudnorm=I=-11:TP=-1.0:LRA=9,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
+        '-vn -loglevel warning -bufsize 5120k ' # Buffer 5MB cukup stabil
+        '-af "aresample=async=1,loudnorm=I=-16:TP=-1.5:LRA=11"'
     ),
 }
 
@@ -1149,8 +1134,66 @@ async def update_player_interface(message, duration, title, url, thumbnail, user
 
 
 
+
+
 #
-#  🔊⚠️ 6.2. :	Function Auto Disconnect VC (DEEP CLEAN VERSION)
+# 🚀 6.2.  :	
+# ------------------------------------------------------------------------------
+#
+#
+# Tambahkan ini di Section 6.1 atau 6.4 (Sebelum start_stream)
+async def update_ui_dashboard(guild_id, interaction=None):
+    q = get_queue(guild_id)
+    chan = bot.get_channel(q.text_channel_id)
+    if not chan: return
+
+    # 1. Hapus dashboard lama agar tidak menumpuk di chat
+    if q.last_dashboard:
+        try: await q.last_dashboard.delete()
+        except: pass
+
+    # 2. Siapkan Embed & View
+    # Pastikan data current_info sudah ada (diisi oleh start_stream)
+    data = q.current_info
+    elapsed = 0 # Lagu baru mulai
+    
+    # Gunakan user dari interaction jika ada, jika tidak pakai bot (untuk auto-next)
+    user_obj = interaction.user if interaction else bot.user
+
+    view = MusicDashboard(guild_id)
+    embed = buat_embed_dashboard(
+        q, elapsed, q.total_duration, 
+        data['title'], data['webpage_url'], 
+        data['thumbnail'], user_obj
+    )
+
+    # 3. Kirim Dashboard Baru
+    try:
+        if interaction and not interaction.response.is_done():
+            # Jika dipicu langsung dari command /play
+            msg = await interaction.followup.send(embed=embed, view=view)
+        else:
+            # Jika dipicu oleh sistem auto-next
+            msg = await chan.send(embed=embed, view=view)
+            
+        q.last_dashboard = msg
+        
+        # 4. Jalankan progress bar update engine
+        if q.update_task: q.update_task.cancel()
+        q.update_task = bot.loop.create_task(
+            update_player_interface(
+                msg, q.total_duration, data['title'], 
+                data['webpage_url'], data['thumbnail'], user_obj, guild_id
+            )
+        )
+    except Exception as e:
+        logger.error(f"Gagal mengirim dashboard: {e}")
+        
+
+
+
+#
+#  🔊⚠️ 6.3. :	Function Auto Disconnect VC (DEEP CLEAN VERSION)
 # ------------------------------------------------------------------------------
 #
 #
@@ -1224,7 +1267,7 @@ async def on_voice_state_update(member, before, after):
 
 
 #
-# ⏯️ 6.3. : HELPER: System Pause / Resume Dynamic (Sinkronisasi UI)
+# ⏯️ 6.4. : HELPER: System Pause / Resume Dynamic (Sinkronisasi UI)
 # ------------------------------------------------------------------------------
 #
 #
@@ -1250,153 +1293,56 @@ async def sync_dashboard_buttons(message, guild_id):
 
 
 #
-# 📡 6.4 : MESIN UTAMA - START STREAM (ULTIMATE STABLE + SMART ERROR HANDLER)
+# 📡 6.5 : MESIN UTAMA - START STREAM (ULTIMATE STABLE + SMART ERROR HANDLER)
 # ------------------------------------------------------------------------------
 #
+# --- [ UPDATE DI SECTION 6.4 ] ---
 async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
-    # 1. Identifikasi Guild & Queue
     g_id = interaction.guild.id if interaction else guild_id_manual
-    if not g_id: return
-    
     q = get_queue(g_id)
-    if interaction: q.text_channel_id = interaction.channel.id
-
-    guild = bot.get_guild(g_id)
-    vc = guild.voice_client if guild else None
     
-    # --- [ HANDLING VOICE SERVER GHOSTING ] ---
-    if vc:
-        if not vc.is_connected() or vc.channel is None:
-            logger.warning(f"Detected Ghosting in Guild {g_id}. Resetting connection...")
-            try:
-                await vc.disconnect(force=True)
-                await asyncio.sleep(1)
-                vc = None 
-            except: pass
+    # 🛑 ANTI-SPAM: Berikan nafas bagi asyncio
+    await asyncio.sleep(2) # Gunakan 2-3 detik agar API YouTube/Discord stabil
 
-    if not vc:
-        logger.error(f"Bot tidak terdeteksi di VC pada Guild {g_id}")
-        return
-
-    # --- [ POINT 1: LOCK SYSTEM (Anti-Double Play) ] ---
     async with q.lock:
-        # --- [ POINT 2: STOP OLD TASK (Anti-Zombie) ] ---
         if q.update_task:
             q.update_task.cancel()
+            try: await q.update_task
+            except: pass
+
+        vc = bot.get_guild(g_id).voice_client
+        if not vc: return
 
         try:
-            # Ambil data metadata di background
-            def fetch_info():
-                with yt_dlp.YoutubeDL(YTDL_OPTIONS) as ydl:
-                    return ydl.extract_info(url, download=False)
-
-            data = await bot.loop.run_in_executor(None, fetch_info)
-            if not data:
-                raise Exception("Metadata tidak ditemukan")
-                
-            if 'entries' in data: data = data['entries'][0]
-            
-            # --- [ POINT 4: METADATA & FORMAT SAFETY ] ---
+            # Metadata Extraction dengan error handling ketat
+            data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
             q.current_info = data
-            stream_url = data.get('url') 
+            q.total_duration = data.get('duration', 0)
             
-            # Fallback jika URL utama tidak ada
-            if not stream_url:
-                formats = data.get('formats', [])
-                for f in formats:
-                    if f.get('url') and (f.get('abr') or f.get('vcodec') == 'none'):
-                        stream_url = f.get('url')
-                        break
+            # Memastikan URL valid
+            stream_url = data.get('url') or (data.get('formats')[0]['url'] if data.get('formats') else None)
             
-            if not stream_url:
-                raise Exception("Tidak dapat menemukan URL streaming yang valid")
-
-            q.total_duration = data.get('duration') or 0
-            
-            # --- [ POINT 3: FFMPEG CONFIG (Stable Reconnect) ] ---
-            ffmpeg_before = FFMPEG_OPTIONS['before_options']
-            if seek_time: 
-                ffmpeg_before += f" -ss {seek_time}"
-
-            audio_source = discord.FFmpegPCMAudio(
-                stream_url, 
-                before_options=ffmpeg_before, 
-                options=FFMPEG_OPTIONS['options']
+            source = discord.PCMVolumeTransformer(
+                discord.FFmpegPCMAudio(stream_url, before_options=FFMPEG_OPTIONS['before_options'], options=FFMPEG_OPTIONS['options']),
+                volume=q.volume
             )
-            source = discord.PCMVolumeTransformer(audio_source, volume=q.volume)
-
-            # --- AFTER PLAYING LOGIC ---
+    
             def after_playing(error):
-                if error: 
-                    logger.error(f"Player Error in Guild {g_id}: {error}")
-                
-                # Hentikan progress bar saat lagu habis/error
-                if q.update_task: 
-                    bot.loop.call_soon_threadsafe(q.update_task.cancel)
-                
-                # Cek jika lagu harus diulang (Loop) atau lanjut antrean
-                if q.loop:
-                    bot.loop.create_task(start_stream(None, q.current_info['webpage_url'], guild_id_manual=g_id))
-                else:
-                    bot.loop.create_task(next_logic(g_id))
-            
-            # Eksekusi Pemutaran
-            if vc.is_playing() or vc.is_paused(): 
-                vc.stop()
-            
-            await asyncio.sleep(0.5) # Jeda stabilitas engine
-            vc.play(source, after=after_playing)
-            
-            # Sinkronisasi Waktu untuk Progress Bar
-            q.start_time = time.time() - (float(seek_time) if seek_time else 0)
-            
-            # --- UI UPDATE & TASK MANAGEMENT ---
-            channel = bot.get_channel(q.text_channel_id)
-            if channel:
-                penerbit = interaction.user if interaction else bot.user
-                emb = buat_embed_dashboard(q, float(seek_time or 0), q.total_duration, 
-                                         data['title'], data['webpage_url'], 
-                                         data.get('thumbnail'), penerbit)
-                
-                if q.last_dashboard:
-                    try: await q.last_dashboard.delete()
-                    except: pass
+                if error: logger.error(f"Stream Error: {error}")
+                # Logika Loop vs Next
+                coro = start_stream(None, url, guild_id_manual=g_id) if q.loop else next_logic(g_id)
+                bot.loop.create_task(coro)
 
-                q.last_dashboard = await channel.send(embed=emb, view=MusicDashboard(g_id))
-                
-                # Jalankan Task Update Progress Bar
-                q.update_task = bot.loop.create_task(
-                    update_player_interface(q.last_dashboard, q.total_duration, 
-                                         data['title'], data['webpage_url'], 
-                                         data.get('thumbnail'), penerbit, g_id)
-                )
+            vc.play(source, after=after_playing)
+            q.start_time = time.time()
+            
+            # Kirim UI Dashboard Baru
+            await update_ui_dashboard(g_id, interaction)
 
         except Exception as e:
-            # --- [ SMART ERROR HANDLER START ] ---
-            error_str = str(e)
-            logger.error(f"Kritis di Start Stream Guild {g_id}: {error_str}")
-            
-            chan = bot.get_channel(q.text_channel_id)
-            if chan:
-                if "403" in error_str:
-                    msg = "🚫 **YouTube Error (403):** Akses ditolak. Mencoba memutar lagu berikutnya..."
-                elif "sign in" in error_str.lower():
-                    msg = "🔞 **YouTube Error:** Lagu ini dibatasi umur (Age Restricted)."
-                elif "video unavailable" in error_str.lower():
-                    msg = "❌ **YouTube Error:** Video tidak tersedia/dihapus."
-                else:
-                    msg = f"⚠️ **Audio Error:** Masalah pada stream. `{error_str[:50]}...`"
-                
-                await chan.send(msg, delete_after=15)
-
-            # Pastikan task progress bar mati jika eror di tengah jalan
-            if q.update_task:
-                q.update_task.cancel()
-
-            # Skip ke lagu berikutnya agar bot tidak bengong
+            logger.error(f"Audit Failure: {e}")
+            # Jika error, jangan diam, langsung paksa lagu berikutnya
             bot.loop.create_task(next_logic(g_id))
-            # --- [ SMART ERROR HANDLER END ] ---
-
 
 
 
@@ -1407,7 +1353,7 @@ async def start_stream(interaction, url, seek_time=None, guild_id_manual=None):
         
         
 #
-# ⏭️ 6.5 : LOGIKA PINDAH LAGU OTOMATIS
+# ⏭️ 6.6 : LOGIKA PINDAH LAGU OTOMATIS
 # ------------------------------------------------------------------------------
 #
 #
@@ -1434,7 +1380,7 @@ async def next_logic(guild_id):
 
 
 #
-# 🎮 6.6 : GATEWAY PEMUTAR (PLAY CONTROL) - AUDIT FIX
+# 🎮 6.7 : GATEWAY PEMUTAR (PLAY CONTROL) - AUDIT FIX
 # ------------------------------------------------------------------------------
 #
 #
@@ -1501,7 +1447,7 @@ async def play_music(interaction, url):
 
 
 #
-# 📜 6.7 :	LOGIKA TAMPILAN ANTREAN (CENTRALIZED)
+# 📜 6.8 :	LOGIKA TAMPILAN ANTREAN (CENTRALIZED)
 # ------------------------------------------------------------------------------
 #
 #
