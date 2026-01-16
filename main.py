@@ -1611,30 +1611,26 @@ class QueueControlView(discord.ui.View):
 @bot.tree.command(name="play", description="Putar musik dari YouTube")
 @app_commands.describe(cari="Masukkan judul lagu atau link YouTube")
 async def play(interaction: discord.Interaction, cari: str):
-    # 1. Gunakan Defer di sini SAJA (Biarkan play_music yang mengatur sisanya)
-    # Gunakan ephemeral=True agar notifikasi "Bot is thinking" tidak mengotori chat umum
+    # Gunakan defer di awal untuk mencegah "Interaction Failed"
+    # Pastikan ephemeral=True agar notifikasi proses bersifat privat
     await interaction.response.defer(ephemeral=True) 
     
-    # 2. Setup Context
     q = get_queue(interaction.guild.id)
     q.text_channel_id = interaction.channel.id 
 
-    # 3. Validasi Voice Channel
     if not interaction.user.voice:
-        return await interaction.followup.send("❌ **Gagal:** Kamu harus berada di Voice Channel!", ephemeral=True)
+        return await interaction.followup.send("❌ **Gagal:** Kamu harus masuk Voice Channel dulu kii!", ephemeral=True)
 
     try:
-        # 4. Panggil Logic Play Utama
-        # Karena kita sudah defer di atas, play_music akan otomatis pakai followup.send
+        # Langsung panggil logika play_music
         await play_music(interaction, cari)
-
     except Exception as e:
         logger.error(f"Error Command Play: {e}")
-        # Jangan kirim pesan jika interaksi sudah selesai
         try:
             await interaction.followup.send(f"⚠️ Terjadi kesalahan: {e}", ephemeral=True)
         except:
             pass
+
 
 
 
