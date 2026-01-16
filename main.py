@@ -225,7 +225,7 @@ FFMPEG_OPTIONS = {
         '-vn ' # Abaikan video
         '-ac 2 ' # Stereo channel
         '-ar 48000 ' # Resample ke 48kHz (Optimal untuk Discord)
-        '-b:a 192k ' # Bitrate tinggi
+        #'-b:a 192k ' # Bitrate tinggi
         '-af "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000:async=1" ' # Normalisasi suara premium
         '-loglevel warning'
     ),
