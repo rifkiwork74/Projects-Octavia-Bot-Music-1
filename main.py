@@ -1115,7 +1115,7 @@ async def update_player_interface(message, duration, title, url, thumbnail, user
             
             # Jeda update (Setel ke 1 detik agar visual bar smooth)
             # Jika hosting berat, naikkan ke 2 atau 3 detik.
-            await asyncio.sleep(1)
+            await asyncio.sleep(3)
 
     except asyncio.CancelledError:
         # Ini akan terpicu saat kita memanggil q.update_task.cancel() di perintah /skip atau /stop
