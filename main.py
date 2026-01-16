@@ -1418,92 +1418,42 @@ async def play_music(interaction, search):
 # 📜 6.7 : LOGIKA TAMPILAN ANTREAN (DYNAMIC & SELECTABLE)
 # ------------------------------------------------------------------------------
 #
-# --- [ 6.6 ] ---
-# ==============================================================================
-# 📜 LOGIKA TAMPILKAN ANTREAN (FIXED INTERACTION & WEBHOOK)
-# ==============================================================================
-async def logic_tampilkan_antrean(interaction: discord.Interaction, guild_id):
-    q = get_queue(guild_id)
-    
-    # 1. CEK STATUS RESPON (Pencegah Error 404/10015)
-    # Kita beritahu Discord bahwa bot sedang memproses data
-    if not interaction.response.is_done():
-        await interaction.response.defer(ephemeral=True)
-    
-    # 2. JIKA ANTREAN KOSONG
-    if not q.queue:
-        emb = discord.Embed(
-            description="📪 **Antrean kosong.** Ayo tambahkan lagu dengan `/play`!", 
-            color=0x2b2d31
-        )
-        return await interaction.followup.send(embed=emb, ephemeral=True)
-    
-    try:
-        # 3. AMBIL DAFTAR LAGU (Embed Limit: 10, Select Limit: 25)
-        daftar = list(q.queue)
-        maks_tampil = 10
-        teks_lagu = []
-        options = [] 
 
-        for i, item in enumerate(daftar):
-            judul = item['title'][:50]
-            # Teks untuk Embed
-            if i < maks_tampil:
-                teks_lagu.append(f"`{i+1}.` **{judul}**")
+class QueueControlView(discord.ui.View):
+    def __init__(self, guild_id, user, options):
+        super().__init__(timeout=60)
+        self.guild_id = guild_id
+        self.user = user
+        
+        # Tambahkan Select Menu
+        select = discord.ui.Select(
+            placeholder="🎯 Pilih nomor lagu untuk dilompati...",
+            options=options
+        )
+        select.callback = self.select_callback
+        self.add_item(select)
+
+    async def select_callback(self, interaction: discord.Interaction):
+        # 1. Validasi User
+        if interaction.user != self.user:
+            return await interaction.response.send_message("⚠️ Ini bukan antreanmu!", ephemeral=True)
+        
+        # 2. SEGERA EDIT MESSAGE (Agar Unknown Webhook Hilang)
+        # Kita hapus view/tombol segera setelah diklik agar tidak dipencet dua kali
+        await interaction.response.edit_message(content="⌛ **Melompat ke lagu pilihan...**", view=None, embed=None)
+        
+        # 3. Eksekusi Lompat Lagu
+        q = get_queue(self.guild_id)
+        index = int(interaction.data['values'][0])
+        
+        if 0 <= index < len(q.queue):
+            # Ambil lagu tujuan, hapus semua lagu sebelumnya di antrean
+            for _ in range(index):
+                q.queue.popleft()
             
-            # Opsi untuk Select Menu
-            if i < 25:
-                options.append(discord.SelectOption(
-                    label=f"Lagu ke-{i+1}",
-                    description=judul,
-                    value=str(i),
-                    emoji="🎵"
-                ))
-
-        sisa = len(daftar) - maks_tampil
-        deskripsi = "\n".join(teks_lagu)
-        if sisa > 0: 
-            deskripsi += f"\n\n*...dan `{sisa}` lagu lainnya dalam antrean.*"
-
-        # 4. RAKIT EMBED ASLI (Tampilan Tetap Sama Seperti Semula)
-        emb = discord.Embed(
-            title="📜 Live Music Queue", 
-            description=deskripsi, 
-            color=0x3498db
-        )
-        emb.set_thumbnail(url="https://i.ibb.co.com/KppFQ6N6/Logo1.gif") # Thumbnail konsisten
-        
-        if q.current_info:
-            emb.add_field(
-                name="▶️ Sedang Diputar", 
-                value=f"**{q.current_info['title'][:60]}**", 
-                inline=False
-            )
-        
-        emb.set_footer(
-            text=f"Total: {len(daftar)} Lagu • Pilih di bawah untuk melompat",
-            icon_url=interaction.user.display_avatar.url
-        )
-
-        # 5. KIRIM DENGAN VIEW (Gunakan Followup karena sudah Defer)
-        view = QueueControlView(guild_id, interaction.user, options)
-        
-        # Kirim pesan sebagai balasan interaksi (hanya dilihat oleh user tersebut)
-        msg = await interaction.followup.send(embed=emb, view=view, ephemeral=True)
-        
-        # Simpan message ke view agar bisa di-edit/disable saat timeout
-        view.message = msg
-
-    except Exception as e:
-        logger.error(f"Error di logic_tampilkan_antrean: {e}")
-        await interaction.followup.send("⚠️ Gagal memuat antrean, coba lagi kii.", ephemeral=True)
-
-# ------------------------------------------------------------------------------
-# NOTE: Pastikan QueueControlView kamu juga menggunakan interaction.response.edit_message
-# agar menu "Select" tidak hang/loading terus setelah diklik.
-# ------------------------------------------------------------------------------
-
-
+            # Putar lagu tersebut
+            target_song = q.queue.popleft()
+            await start_stream(None, target_song['url'], guild_id_manual=self.guild_id)
 
 
 
