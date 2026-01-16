@@ -195,7 +195,7 @@ YTDL_OPTIONS = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
-    'cookiefile': 'www.youtube.com_cookies.txt',
+    'cookiefile': 'www.youtube.com_cookies.txt', 
     'cachedir' : 'False',
     # [FIX 1]: Menghapus 'audioformat' dan 'extractaudio'. 
     # Kita melakukan direct streaming, bukan konversi file lokal. 
@@ -204,10 +204,7 @@ YTDL_OPTIONS = {
     # [FIX 2]: High Network Optimization
     # Buffer diperbesar ke 10MB untuk menampung lonjakan data tanpa putus
     'http_chunk_size': 10485760, 
-    'expected_protocol': 'https',
-    'headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    }
+    'expected_protocol': 'https'
 }
 
 
@@ -221,17 +218,18 @@ FFMPEG_OPTIONS = {
         '-reconnect 1 '
         '-reconnect_streamed 1 '
         '-reconnect_delay_max 5 '
-        '-reconnect_at_eof 1 '
+        '-reconnect_at_eof 1 ' # Mencegah skip jika koneksi putus di akhir lagu
         '-nostdin '
         '-ss 00:00:00 '
-        '-threads 1' # Di hosting, 1 thread seringkali lebih stabil untuk audio
+        '-threads 2'
     ),
     'options': (
         '-vn '
-        '-loglevel panic ' # Mengurangi log agar tidak memenuhi storage hosting
-        '-bufsize 4096k ' # Menaikkan buffer sedikit lagi
-        # Sederhanakan filter:
-        '-af "asetpts=N/SR/TB,aresample=48000:async=1,loudnorm=I=-11:TP=-1.5:LRA=11"'
+        '-nostats '
+        '-loglevel warning '
+        '-bufsize 2048k ' # Buffer lebih besar untuk koneksi tidak stabil
+        # Filter aresample=async=1 menjaga sinkronisasi audio jika terjadi reconnect
+        '-af "asetpts=PTS-STARTPTS,aresample=async=1:min_hard_comp=0.01,loudnorm=I=-11:TP=-1.0:LRA=9,aresample=48000:resampler=soxr:precision=28:first_pts=0"'
     ),
 }
 
