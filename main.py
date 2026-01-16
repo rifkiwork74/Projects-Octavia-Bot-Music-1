@@ -177,20 +177,14 @@ COOKIES_FILE = 'www.youtube.com_cookies.txt'
 # ==============================================================================
 
 
-#
-# 🔄 3.1: YDL SOURCE & TRANSCODING CONFIG
-# ------------------------------------------------------------------------------
-#
-#
-# --- [ SEKSI 3.1: YTDL CONFIG - STABLE VERSION ] ---
+# --- [ 3.1: YTDL WAR-MODE CONFIG ] ---
 YTDL_OPTIONS = {
-    # Mengambil audio terbaik tanpa memaksa ekstensi tertentu agar tidak "No List Format"
-    'format': 'bestaudio/best', 
+    'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': True,
     'nocheckcertificate': True,
-    'ignoreerrors': True,
+    'ignoreerrors': False,
     'logtostderr': False,
     'quiet': True,
     'no_warnings': True,
@@ -198,24 +192,26 @@ YTDL_OPTIONS = {
     'source_address': '0.0.0.0',
     'cookiefile': COOKIES_FILE, 
     'cachedir': False,
-    'no_color': True,
-    # Tambahkan ini agar ekstraksi lebih cepat dan stabil
-    'extract_flat': False,
-    'force_generic_extractor': False,
-    'http_chunk_size': 10485760, 
+    # --- [ BYPASS TRICKS ] ---
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['android', 'ios', 'web'],
+            'po_token': ['web+web_embedded_player'], # Memicu bypass token terbaru
+        }
+    },
+    'http_chunk_size': 10485760,
     'headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': 'https://www.youtube.com',
+        'Referer': 'https://www.youtube.com/',
+        'Sec-Fetch-Mode': 'navigate',
     }
 }
 
 
-
-
-
-#
-# 🔊 3.2: AUDIO SIGNAL & STREAMING OPTIONS (STABLE RECONNECT)
-# ------------------------------------------------------------------------------
-#
+# --- [ 3.2: HIGH-FIDELITY AUDIO ENGINE ] ---
 FFMPEG_OPTIONS = {
     'before_options': (
         '-reconnect 1 '
@@ -223,18 +219,17 @@ FFMPEG_OPTIONS = {
         '-reconnect_delay_max 5 '
         '-reconnect_at_eof 1 '
         '-nostdin '
-        '-threads 2'
+        '-threads 0' # Menggunakan seluruh core CPU yang tersedia untuk proses cepat
     ),
     'options': (
-    '-vn '
-    '-nostats '
-    '-loglevel warning '
-    '-ignore_unknown ' # Tambahkan ini agar tidak gampang crash
-    '-af "asetpts=N/SR/TB,aresample=48000:async=1,loudnorm=I=-11:TP=-1.5:LRA=11"'
-	),
+        '-vn ' # Abaikan video
+        '-ac 2 ' # Stereo channel
+        '-ar 48000 ' # Resample ke 48kHz (Optimal untuk Discord)
+        '-b:a 192k ' # Bitrate tinggi
+        '-af "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000:async=1" ' # Normalisasi suara premium
+        '-loglevel warning'
+    ),
 }
-
-
 
 
 
