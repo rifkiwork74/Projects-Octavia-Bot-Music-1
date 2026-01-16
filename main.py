@@ -1400,23 +1400,23 @@ async def next_logic(guild_id):
 # ------------------------------------------------------------------------------
 # 🎵 6.6 : LOGIKA PLAY MUSIC (SINKRONISASI NOTIFIKASI & AUTO-JOIN) - UPDATED
 # ------------------------------------------------------------------------------
-# 🎵 6.6 : LOGIKA PLAY MUSIC (ANTI-WEBHOOK ERROR)
-# ------------------------------------------------------------------------------
-async def play_music(interaction, search):
+ async def play_music(interaction, search):
     q = get_queue(interaction.guild_id)
    
     try:
-        # Pastikan interaksi tidak hangus
+        # 1. Pastikan interaksi tidak hangus
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
 
+        # 2. Cek Voice Channel
         if not interaction.user.voice:
-            return await interaction.followup.send("⚠️ Kamu harus masuk ke Voice Channel dulu!")
+            return await interaction.followup.send("⚠️ Kamu harus masuk ke Voice Channel dulu!", ephemeral=True)
 
         vc = interaction.guild.voice_client
         if not vc:
             vc = await interaction.user.voice.channel.connect()
 
+        # 3. Fungsi pencarian YouTube
         def search_yt():
             with yt_dlp.YoutubeDL(YTDL_OPTIONS) as ydl:
                 info = ydl.extract_info(f"ytsearch:{search}" if "http" not in search else search, download=False)
@@ -1425,7 +1425,7 @@ async def play_music(interaction, search):
 
         data = await bot.loop.run_in_executor(None, search_yt)
         if not data:
-            return await interaction.followup.send("❌ Lagu tidak ditemukan.")
+            return await interaction.followup.send("❌ Lagu tidak ditemukan.", ephemeral=True)
 
         song_data = {
             'url': data['webpage_url'],
@@ -1435,18 +1435,18 @@ async def play_music(interaction, search):
             'thumbnail': data.get('thumbnail')
         }
         
-        # Hapus notifikasi pencarian lama jika ada
+        # 4. Hapus notifikasi pencarian lama jika ada
         if q.last_search_msg:
             try: await q.last_search_msg.delete()
             except: pass
             q.last_search_msg = None
 
+        # 5. Logika Antrean (Queue)
         if vc.is_playing() or vc.is_paused():
             q.queue.append(song_data)
             posisi = len(q.queue)
             emb_queue = buat_embed_added_queue(data['title'], data['webpage_url'], data.get('thumbnail'), interaction.user, posisi)
             
-            # Hapus pesan added-queue sebelumnya agar tidak spam
             if q.last_msg:
                 try: await q.last_msg.delete()
                 except: pass
@@ -1454,23 +1454,12 @@ async def play_music(interaction, search):
             q.last_msg = await interaction.channel.send(embed=emb_queue)
             await interaction.followup.send("✅ Berhasil masuk antrean!", ephemeral=True)
         else:
+            # 6. Langsung Putar
             await interaction.followup.send(f"🚀 Memutar: **{data['title'][:50]}**", ephemeral=True)
             await start_stream(interaction, data['webpage_url'])
 
-    
     except Exception as e:
-    logger.error(f"Play Music Error: {e}")
-    # Pastikan pesan error bersifat privat (ephemeral) agar tidak mengotori chat umum
-    # dan tambahkan pengecekan agar tidak crash jika followup gagal
-        # ... (kode di atas try) ...
-    try:
-        # Semua isi di dalam try harus masuk 4 spasi (1 tab)
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
-        # ... (isi logika play music lainnya) ...
-
-    except Exception as e:
-        # Bagian except harus sejajar lurus dengan kata 'try'
+        # --- PERBAIKAN INDENTASI DI SINI ---
         logger.error(f"Play Music Error: {e}")
         try:
             if interaction.response.is_done():
@@ -1478,7 +1467,8 @@ async def play_music(interaction, search):
             else:
                 await interaction.response.send_message(f"⚠️ **Sistem Error:** `{e}`", ephemeral=True)
         except:
-            pass 
+            pass
+
             
     
     
